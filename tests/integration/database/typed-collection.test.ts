@@ -1,6 +1,7 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, inject, it } from "vitest";
+import { Collection } from "mongodb";
+import { afterEach, beforeAll, beforeEach, describe, expect, inject, it, vi } from "vitest";
 import { z } from "zod";
-import { getDb, typedCollection, withTransaction } from "@/modules/database";
+import { getDb, safeEquals, typedCollection, withTransaction } from "@/modules/database";
 import {
   ConflictError,
   createLogger,
@@ -12,6 +13,11 @@ import { startStandalone, useDatabaseUri } from "../../helpers/mongo";
 
 const COLLECTION = "typed_probe";
 const strictSchema = z.strictObject({ ref: z.string().min(1), amount: z.string() });
+const counterSchema = z.strictObject({
+  ref: z.string().min(1),
+  count: z.number().int().min(1),
+  note: z.string().max(8),
+});
 
 async function raw() {
   return (await getDb()).collection(COLLECTION);
@@ -188,5 +194,145 @@ describe("typedCollection", () => {
     } finally {
       if (!stopped) await standalone.stop({ doCleanup: true });
     }
+  });
+});
+
+describe("typedCollection: maxTimeMS on every read, update and count (entry gate 4)", () => {
+  it.each([
+    "findOne",
+    "find",
+    "findOneAndUpdate",
+    "updateOne",
+    "updateMany",
+    "countDocuments",
+  ] as const)("%s passes maxTimeMS: 5000 to the driver", async (method) => {
+    const spy = vi.spyOn(Collection.prototype, method);
+    const probes = typedCollection(COLLECTION, counterSchema);
+    const filter = safeEquals("ref", "m");
+    if (method === "findOne") await probes.findOne(filter);
+    if (method === "find") await probes.find(filter, { limit: 1 });
+    if (method === "findOneAndUpdate")
+      await probes.findOneAndUpdate(filter, { $set: { note: "x" } });
+    if (method === "updateOne") await probes.updateOne(filter, { $set: { note: "x" } });
+    if (method === "updateMany") await probes.updateMany(filter, { $set: { note: "x" } });
+    if (method === "countDocuments") await probes.countDocuments(filter);
+    expect(spy).toHaveBeenCalled();
+    const options = spy.mock.calls[0]?.at(-1);
+    expect(options).toMatchObject({ maxTimeMS: 5000 });
+  });
+});
+
+describe("typedCollection: update operations", () => {
+  const counters = () => typedCollection(COLLECTION, counterSchema);
+
+  it("findOneAndUpdate upserts with $inc and $setOnInsert and returns the document after", async () => {
+    const filter = safeEquals("ref", "c1");
+    const update = { $inc: { count: 1 }, $setOnInsert: { note: "new" } };
+    const first = await counters().findOneAndUpdate(filter, update, { upsert: true });
+    const second = await counters().findOneAndUpdate(filter, update, { upsert: true });
+    expect(first).toMatchObject({ ref: "c1", count: 1, note: "new" });
+    expect(second).toMatchObject({ ref: "c1", count: 2, note: "new" });
+    expect(second?._id.equals(first?._id ?? "")).toBe(true);
+  });
+
+  it("findOneAndUpdate returns null when nothing matches and upsert is off", async () => {
+    expect(
+      await counters().findOneAndUpdate(safeEquals("ref", "missing"), { $set: { note: "x" } }),
+    ).toBeNull();
+  });
+
+  it("findOneAndUpdate can return the document before the update", async () => {
+    await counters().insertOne({ ref: "b1", count: 1, note: "old" });
+    const before = await counters().findOneAndUpdate(
+      safeEquals("ref", "b1"),
+      { $set: { note: "new" } },
+      { returnDocument: "before" },
+    );
+    expect(before?.note).toBe("old");
+  });
+
+  it.each([
+    { label: "an unknown $set key", update: { $set: { other: "x" } } },
+    {
+      label: "a $set value that fails the field schema",
+      update: { $set: { note: "too-long-note" } },
+    },
+    { label: "an unknown $setOnInsert key", update: { $setOnInsert: { other: 1 } } },
+    { label: "a non-integer $inc", update: { $inc: { count: 1.5 } } },
+    { label: "an unknown $inc key", update: { $inc: { other: 1 } } },
+    { label: "an empty update", update: {} },
+  ])("rejects $label with DOCUMENT_INVALID and writes nothing", async ({ update }) => {
+    await counters().insertOne({ ref: "v1", count: 1, note: "n" });
+    const error: unknown = await counters()
+      .updateOne(safeEquals("ref", "v1"), update as never)
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ValidationError);
+    expect((error as ValidationError).code).toBe("DOCUMENT_INVALID");
+    expect(await counters().findOne(safeEquals("ref", "v1"))).toMatchObject({
+      count: 1,
+      note: "n",
+    });
+  });
+
+  it("names the key but not the value in a DOCUMENT_INVALID message", async () => {
+    const error = (await counters()
+      .updateOne(safeEquals("ref", "x"), { $set: { note: "SENTINEL-TOO-LONG" } })
+      .catch((e: unknown) => e)) as ValidationError;
+    expect(error.message).toContain("$set.note");
+    expect(error.message).not.toContain("SENTINEL");
+  });
+
+  it("updateOne reports matched, modified and upserted counts", async () => {
+    await counters().insertOne({ ref: "u1", count: 1, note: "a" });
+    expect(await counters().updateOne(safeEquals("ref", "u1"), { $set: { note: "b" } })).toEqual({
+      matchedCount: 1,
+      modifiedCount: 1,
+      upsertedId: null,
+    });
+    const upserted = await counters().updateOne(
+      safeEquals("ref", "u2"),
+      { $setOnInsert: { count: 1, note: "c" } },
+      { upsert: true },
+    );
+    expect(upserted.matchedCount).toBe(0);
+    expect(upserted.upsertedId).not.toBeNull();
+  });
+
+  it("updateMany updates every match and countDocuments counts with an optional limit", async () => {
+    for (const ref of ["m1", "m2", "m3"]) await counters().insertOne({ ref, count: 1, note: "a" });
+    const result = await counters().updateMany({}, { $set: { note: "z" } });
+    expect(result).toEqual({ matchedCount: 3, modifiedCount: 3 });
+    expect(await counters().countDocuments({ note: "z" })).toBe(3);
+    expect(await counters().countDocuments({}, { limit: 2 })).toBe(2);
+    for (const limit of [0, 1001, 1.5]) {
+      await expect(counters().countDocuments({}, { limit })).rejects.toBeInstanceOf(RangeError);
+    }
+  });
+
+  it("maps a duplicate key on update to ConflictError DUPLICATE_KEY", async () => {
+    const db = await getDb();
+    await db
+      .collection("dup_update_probe")
+      .createIndex({ ref: 1 }, { unique: true, name: "dup_update_unique" });
+    const dups = typedCollection("dup_update_probe", counterSchema);
+    await dups.insertOne({ ref: "a", count: 1, note: "n" });
+    await dups.insertOne({ ref: "b", count: 1, note: "n" });
+    const error: unknown = await dups
+      .updateOne(safeEquals("ref", "b"), { $set: { ref: "a" } })
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ConflictError);
+    expect((error as ConflictError).code).toBe("DUPLICATE_KEY");
+  });
+
+  it("honours the session for updates inside a transaction", async () => {
+    await counters().insertOne({ ref: "t1", count: 1, note: "a" });
+    await expect(
+      withTransaction(async (session) => {
+        await counters().updateOne(safeEquals("ref", "t1"), { $inc: { count: 1 } }, { session });
+        expect(await counters().countDocuments(safeEquals("count", 2), { session })).toBe(1);
+        throw new Error("rollback");
+      }),
+    ).rejects.toThrow("rollback");
+    expect(await counters().findOne(safeEquals("ref", "t1"))).toMatchObject({ count: 1 });
   });
 });
