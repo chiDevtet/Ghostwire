@@ -2167,3 +2167,10 @@ The following are recorded as **[decision]/[clarification]** in the text and do 
 - the landing page treating an outage as signed out (§4.3)
 - UTC date formatting (§3.2)
 - toast copy for sign-out, unlink and revoke (§4.3)
+
+### 10.1 Resolutions (user, 2026-11-13)
+
+- **D1:** (a). Keep Playwright 1.65 and document `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu22.04-x64` for Ubuntu 20.04 hosts in the README and in acceptance criterion 1.
+- **D2:** add `@wallet-standard/features` pinned at exactly `1.1.1` as a direct runtime dependency.
+- **D3:** accept the nonce CSP (`src/proxy.ts`, `'strict-dynamic'`, `await connection()` in the root layout). Every page is dynamic.
+- **D4:** use the link-mode copy in §3.4 as written.
