@@ -43,13 +43,16 @@ export function createSession(
 
 /**
  * null for: no token, unknown hash, revoked, expired (idle or absolute), user missing or not
- * active. On success slides expiresAt to min(at + idle, absoluteExpiresAt), at most once per
- * hour, with a compare-and-set on lastSeenAt so concurrent requests write once.
+ * active. On success, unless options.slide is false, slides expiresAt to
+ * min(at + idle, absoluteExpiresAt), at most once per hour, with a compare-and-set on lastSeenAt
+ * so concurrent requests write once. With slide: false it only reads (server components).
  */
 export async function resolveSession(
   token: string | null,
   at: Date,
+  options: { readonly slide?: boolean } = {},
 ): Promise<SessionResolution | null> {
+  const slide = options.slide ?? true;
   if (token === null) return null;
   await ensureAuthReady();
   const doc = await sessions.findOne(safeEquals("tokenHash", sha256Hex(token)));
@@ -67,7 +70,7 @@ export async function resolveSession(
 
   let expiresAt = doc.expiresAt;
   let slid = false;
-  if (atMs - doc.lastSeenAt.getTime() >= SLIDE_INTERVAL_MS) {
+  if (slide && atMs - doc.lastSeenAt.getTime() >= SLIDE_INTERVAL_MS) {
     const { SESSION_IDLE_DAYS } = loadConfig();
     const next = new Date(
       Math.min(atMs + SESSION_IDLE_DAYS * DAY_MS, doc.absoluteExpiresAt.getTime()),

@@ -3,14 +3,17 @@ export type { ChallengeDoc, SessionDoc, UserDoc } from "./internal/collections";
 export type {
   AuthContext,
   ChallengeView,
+  CookieReader,
   CurrentSession,
   HandlerContext,
   LinkResult,
   MeView,
+  PageSession,
   RequestMeta,
   RevokeResult,
   RouteHandler,
   SessionHandler,
+  SessionReader,
   SessionResolution,
   SessionView,
   SignInResult,
@@ -32,3 +35,4 @@ export { listSessions, revokeSession } from "./internal/session-management";
 export { issueLinkChallenge, unlinkWallet, verifyLink } from "./internal/link";
 export { getMe, listWallets } from "./internal/account";
 export { withOrigin, withSession } from "./internal/wrappers";
+export { resolvePageSession } from "./internal/page-session";

@@ -36,6 +36,17 @@ export interface AuthContext extends RequestMeta {
   readonly session: CurrentSession;
 }
 
+/** What read-only views need: the request time and the resolved session. AuthContext satisfies it. */
+export type SessionReader = Pick<AuthContext, "at" | "session">;
+
+/** A session resolved for a server component render (never slid). */
+export type PageSession = SessionReader;
+
+/** Structural subset of next/headers' ReadonlyRequestCookies, so auth never imports next/headers. */
+export interface CookieReader {
+  get(name: string): { readonly value: string } | undefined;
+}
+
 export type SessionHandler<P extends object = object> = (
   request: Request,
   auth: AuthContext,
