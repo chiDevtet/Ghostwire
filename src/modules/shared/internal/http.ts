@@ -30,26 +30,31 @@ export function noContent(init: { headers?: Record<string, string> } = {}): Resp
 }
 
 /**
- * Logs the full error server-side (with its original code); the client only ever sees a stable
- * code and safe message. Every status >= 500 collapses to INTERNAL, except
- * DependencyUnavailableError, which keeps its 503 code and Retry-After. RateLimitedError adds
- * Retry-After with its own seconds.
+ * Maps any thrown value to a safe response; the client only ever sees a stable code and safe
+ * message. Logging by status class: unknown throws and every status >= 500 log at error with the
+ * error object (original code kept); UNAUTHENTICATED (401) logs at debug; every other status
+ * below 500 logs at warn with { code, status } only (no err, so no stack). Every status >= 500
+ * collapses to INTERNAL, except DependencyUnavailableError, which keeps its 503 code and
+ * Retry-After. RateLimitedError adds Retry-After with its own seconds.
  */
 export function toErrorResponse(error: unknown): Response {
-  const code = isAppError(error) ? error.code : "INTERNAL";
-  logger.error("request failed", { err: error, code });
-  if (!isAppError(error)) return noStoreJson(INTERNAL_BODY, { status: 500 });
+  if (!isAppError(error)) {
+    logger.error("request failed", { err: error, code: "INTERNAL" });
+    return noStoreJson(INTERNAL_BODY, { status: 500 });
+  }
+  const status = error.httpStatus;
+  if (status >= 500) logger.error("request failed", { err: error, code: error.code });
+  else if (error.code === "UNAUTHENTICATED")
+    logger.debug("request rejected", { code: error.code, status });
+  else logger.warn("request rejected", { code: error.code, status });
   if (error instanceof DependencyUnavailableError) {
     return noStoreJson(
       { code: error.code, message: error.safeMessage },
-      { status: error.httpStatus, headers: { "Retry-After": RETRY_AFTER_SECONDS } },
+      { status, headers: { "Retry-After": RETRY_AFTER_SECONDS } },
     );
   }
-  if (error.httpStatus >= 500) return noStoreJson(INTERNAL_BODY, { status: 500 });
+  if (status >= 500) return noStoreJson(INTERNAL_BODY, { status: 500 });
   const headers: Record<string, string> =
     error instanceof RateLimitedError ? { "Retry-After": String(error.retryAfterSeconds) } : {};
-  return noStoreJson(
-    { code: error.code, message: error.safeMessage },
-    { status: error.httpStatus, headers },
-  );
+  return noStoreJson({ code: error.code, message: error.safeMessage }, { status, headers });
 }
