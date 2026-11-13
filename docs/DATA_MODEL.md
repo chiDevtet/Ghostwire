@@ -11,28 +11,29 @@ Never persist seed phrases, private signing keys, plaintext viewing keys, raw pr
 ## 2. Collections
 
 ### users
-- `_id`
-- `email` nullable, normalized and unique where appropriate
-- `authProvider`
-- `status`: active | suspended | deleted
-- `preferences`: display currency, notifications, privacy display preference
-- `createdAt`, `updatedAt`
 
-Do not assume email is the only authentication method.
+Implemented in PR 02a (owner: `auth`; schema `src/modules/auth/internal/collections.ts`).
+
+- `_id`
+- `status`: active | suspended | deleted (new users are active; no API changes it yet)
+- `createdAt`, `updatedAt` (`updatedAt` is also the unlink write-skew guard, ADR-0006)
+
+No email and no auth provider field: sign-in is wallet-signature only (ADR-0006). Preferences come later.
 
 ### wallets
+
+Implemented in PR 02a (owner: `wallet`; schema `src/modules/wallet/internal/collection.ts`).
+
 - `_id`
 - `userId`
-- `walletAddress`
-- `walletType`: embedded | external
-- `provider`
+- `address`: base58 Solana public key (decodes to exactly 32 bytes)
 - `network`: devnet | mainnet-beta
-- `privacyInitialized` (cache/status only, not sole proof of readiness)
-- capability flags and last validation time
-- `status`: active | disconnected | recovery_required
-- timestamps
+- `walletType`: external (embedded wallets are out of scope until the provider is validated)
+- `provider`: nullable informational label matching `^[a-z0-9_-]{1,32}$`, never trusted for behaviour
+- `status`: active | disconnected
+- `linkedAt` (reset when a disconnected wallet is linked again), `updatedAt`
 
-No private keys or seed phrases. Persist only safe, necessary provider identifiers. Define multi-wallet-per-user and uniqueness semantics explicitly.
+One account, many wallets: `(address, network)` belongs to exactly one account, and the last active wallet cannot be unlinked. Privacy-initialization and capability fields arrive with the Helius adapter (PR 03). Binding a mainnet-beta wallet does not imply privacy readiness.
 
 ### payment_requests
 - `_id`
@@ -77,29 +78,53 @@ This is application orchestration/presentation state, not the source of truth fo
 An app-generated receipt is not automatically a cryptographic proof of a confidential amount to an unauthorized third party.
 
 ### security_events
+
+Implemented in PR 02a (owner: `security`; schema `src/modules/security/internal/events.ts`).
+
 - `_id`
-- `userId` nullable
-- `eventType`
-- `severity`: info | warning | critical
-- source/category
-- timestamp
-- safe metadata only
+- `type`: signin_success | signin_failed | wallet_linked | link_failed | wallet_unlinked | session_revoked | rate_limited
+- `severity`: info | warning | critical (`*_failed` and `rate_limited` are warning; nothing is critical yet)
+- `userId` nullable, `walletId` nullable
+- `reason`: nullable static string from a fixed list (never request data)
+- `createdAt`
 
-Never log keys, viewing material, auth tokens, sensitive notes, or unnecessary financial data.
+Written best effort after commit; never IPs, tokens, nonces, signatures or messages. The `rate_limited` event (and its warn log) is written only on the first rejection in each window; later rejections still return 429 with `Retry-After`.
 
-### sessions (if not handled by auth provider)
-Use secure session records with expiry/revocation and minimized device metadata. Store hashed token identifiers, not bearer tokens in plaintext.
+### sessions
+
+Implemented in PR 02a (owner: `auth`). Opaque tokens; only `sha256(token)` is stored.
+
+- `_id`, `tokenHash`, `userId`, `walletId` (the wallet used to sign in), `network`
+- `createdAt`, `lastSeenAt`, `expiresAt` (idle, sliding at most hourly), `absoluteExpiresAt`
+- `revokedAt` nullable, `userAgent` nullable (control characters stripped, at most 128 chars)
+
+### auth_challenges
+
+Implemented in PR 02a (owner: `auth`). One signature attempt per challenge.
+
+- `_id` (a random 96-bit ObjectId from `randomObjectId()`, not driver-generated, so ids cannot be guessed and challenges cannot be burned by guessing), `nonceHash` (`sha256(nonce)`), `message` (the exact signed text), `address`, `network`
+- `purpose`: signin | link; `userId` (set for link, null for signin)
+- `createdAt`, `expiresAt` (5 minutes), `consumedAt` nullable
+
+### rate_limits
+
+Implemented in PR 02a (owner: `security`). Fixed windows.
+
+- `_id`, `key` (`sha256("<route>:<kind>:<subject>")`; the IP exists only inside this hash), `windowStart`, `count`, `expiresAt`
 
 ## 3. Indexes
 
 - users: unique normalized email where email auth is used.
-- wallets: wallet address + network; userId.
+- wallets: `wallets_address_network_unique` (address + network, unique); `wallets_userId`.
+- auth_challenges: `auth_challenges_nonceHash_unique` (unique); `auth_challenges_expiresAt_ttl` (TTL 3600 s after expiresAt).
+- sessions: `sessions_tokenHash_unique` (unique); `sessions_userId`; `sessions_absoluteExpiresAt_ttl` (TTL 0 s).
+- rate_limits: `rate_limits_key_windowStart_unique` (unique); `rate_limits_expiresAt_ttl` (TTL 0 s).
 - payment_requests: unique publicId; status + expiry.
 - payments: unique idempotency scope; transaction signature where present; sender wallet + createdAt; request association.
 - receipts: unique receiptId; paymentId.
-- security_events: userId + timestamp; TTL only under an approved retention policy.
+- security_events: `security_events_userId_createdAt` (userId + createdAt descending); no TTL until a retention policy is approved.
 
-Confirm uniqueness rules for multi-wallet and multi-network support.
+Multi-wallet and multi-network uniqueness is decided in ADR-0006: one (address, network) per account. Indexes are created by `prepareDatabase()` at boot and the `ensureAuthReady()` request gate.
 
 ## 4. Amount representation
 

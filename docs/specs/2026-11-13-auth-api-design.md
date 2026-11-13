@@ -68,7 +68,7 @@ Every response uses `noStoreJson`. Every non-GET request must pass the Origin ch
 | `POST /auth/verify` | none | `{ challengeId, signature }` | 200 `{ user: { id }, wallet: { id, address, network } }` + `Set-Cookie` |
 | `POST /auth/logout` | session | none | 204, clears the cookie, revokes the current session |
 | `GET /me` | session | — | 200 `{ user: { id, createdAt }, session: { id, network, expiresAt }, wallets: [...] }` |
-| `GET /sessions` | session | — | 200 `{ sessions: [{ id, current, createdAt, lastSeenAt, expiresAt, userAgent }] }` |
+| `GET /sessions` | session | — | 200 `{ sessions: [{ id, current, createdAt, lastSeenAt, expiresAt, network, userAgent }] }` |
 | `DELETE /sessions/:id` | session | none | 204. Only the caller's own sessions; otherwise 404 |
 | `GET /wallets` | session | — | 200 `{ wallets: [{ id, address, network, provider, status, linkedAt }] }` |
 | `POST /wallets/link/challenge` | session | `{ address, network }` | 200 `{ challengeId, message, expiresAt }` |
@@ -161,7 +161,7 @@ Expiration Time: {expiresAt}
 ### 5.5 Request protection
 
 - **Origin check.** Every non-GET request under `/api/v1` must have an `Origin` header exactly equal to `APP_ORIGIN`. A missing or different Origin gives 403 `ORIGIN_REJECTED`. `SameSite=Lax` is defence in depth.
-- **Client IP.** The IP is the first `x-forwarded-for` entry only when `TRUST_PROXY=true`. Otherwise it is the literal `"unknown"`, which means a single shared IP bucket. That fails safe toward stricter limits.
+- **Client IP.** The IP is the rightmost `x-forwarded-for` entry (the one the nearest trusted proxy appended), normalized, only when `TRUST_PROXY=true`. Otherwise it is the literal `"unknown"`, which means a single shared IP bucket. That fails safe toward stricter limits.
 - **Rate limits.** The defaults are in §5.2. They can be overridden through the config keys `RATE_LIMIT_CHALLENGE_PER_MIN`, `RATE_LIMIT_CHALLENGE_PER_HOUR_ADDRESS` and `RATE_LIMIT_VERIFY_PER_MIN`.
 - **Body size.** JSON bodies over 4 KB are rejected with 400 `VALIDATION_FAILED`.
 
@@ -244,3 +244,13 @@ Vitest, written test-first.
 - **The single shared rate-limit bucket when `TRUST_PROXY=false` behind a proxy** may throttle all users together. This is documented. The deploy configuration must set `TRUST_PROXY` correctly.
 - **Wallet `signMessage` differences between Phantom and Solflare** are not exercised here (no UI). 02b's manual compatibility check covers them, and the message is plain UTF-8 to keep wallet display predictable.
 - **MongoDB-based rate limiting** adds one database write per auth request. That is acceptable at beta scale and revisited if load requires.
+
+## Changes during build (2026-11-13)
+
+Review-driven changes approved by the user or by spec ruling; the sections above are updated where they conflict.
+
+a. Client IP: with `TRUST_PROXY=true` it is the rightmost `X-Forwarded-For` entry, normalized (IPv4-mapped IPv6 to dotted IPv4, IPv6 canonical lowercase compressed, zone ids to `unknown`). This assumes one appending proxy hop.
+b. The `rate_limited` security event and its warn log are written only on the first rejection in each window; later rejections still return 429 with `Retry-After`.
+c. Ed25519 verification rejects small-order and non-canonical public keys before calling `node:crypto`.
+d. `auth_challenges._id` is a random 96-bit ObjectId (`randomObjectId()`), not driver-generated.
+e. `GET /sessions` items include `network` (decision A4). Revoking an already-revoked own session is a 204 no-op with no second event.

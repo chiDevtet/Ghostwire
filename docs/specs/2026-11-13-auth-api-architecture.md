@@ -609,7 +609,7 @@ export function sha256Hex(value: string): string;
 export function checkOrigin(request: Request, appOrigin: string): void;
 
 /**
- * trustProxy=false → "unknown". trustProxy=true → first comma-separated X-Forwarded-For entry,
+ * trustProxy=false → "unknown". trustProxy=true → rightmost comma-separated X-Forwarded-For entry (normalized),
  * trimmed, and only if net.isIP() accepts it; otherwise "unknown".
  */
 export function clientIp(request: Request, trustProxy: boolean): string;
@@ -704,7 +704,7 @@ export interface SignInResult {
 export interface LinkResult { readonly wallet: WalletView; readonly created: boolean }
 export interface SessionView {
   readonly id: string; readonly current: boolean; readonly createdAt: string;
-  readonly lastSeenAt: string; readonly expiresAt: string; readonly userAgent: string | null;
+  readonly lastSeenAt: string; readonly expiresAt: string; readonly network: SolanaNetwork; readonly userAgent: string | null;
 }
 export interface MeView {
   readonly user: { id: string; createdAt: string };
@@ -1328,7 +1328,7 @@ export function captureLogLines(): { lines(): string[]; restore(): void };
 | `tests/unit/wallet/sign-in-message.test.ts` | build golden string (exact bytes) for signin and link; round-trip; parse rejects each altered field, an extra line, a missing line, a wrong statement, CRLF, Version 2, `solana:testnet`, and non-round-tripping timestamps |
 | `tests/unit/security/tokens.test.ts` | `randomToken(32)` is 43 chars of base64url, distinct across calls; RangeError at 15/65; `sha256Hex` known vector (`"abc"`) |
 | `tests/unit/security/origin.test.ts` | GET/HEAD/OPTIONS pass without Origin; POST/DELETE: missing → throw, foreign → throw, `https://ghostwire.test/` (trailing slash) → throw, exact → pass |
-| `tests/unit/security/client-ip.test.ts` | trustProxy false → `"unknown"` even with XFF; true: first entry, trimmed; garbage → `"unknown"`; IPv6 |
+| `tests/unit/security/client-ip.test.ts` | trustProxy false → `"unknown"` even with XFF; true: rightmost entry, trimmed and normalized; garbage → `"unknown"`; IPv6 |
 | `tests/unit/security/fixed-window.test.ts` | window start/end alignment, `retryAfterSeconds` at window start, mid-window and the last ms (→ 1); RangeError |
 | `tests/unit/security/read-json-body.test.ts` | 4096 bytes OK; 4097 rejected (with and without Content-Length; chunked stream cancelled); Content-Length 10^9 rejected without reading; empty, invalid JSON and invalid UTF-8 → `VALIDATION_FAILED` |
 | `tests/unit/auth/cookies.test.ts` | exact cookie strings for https and http; clear cookie; `readSessionToken` picks the configured name only, ignores a malformed value and takes the first duplicate |
@@ -1378,3 +1378,13 @@ export function captureLogLines(): { lines(): string[]; restore(): void };
 1. **What "every query uses `safeEquals`" means (gate 3).** As specified, `safeEquals` cannot express `null` or `$gt`, which the spec's own consume filter requires (`consumedAt: null, expiresAt: { $gt: now }`). This design routes every *variable* value through `safeEquals` and writes server constants literally (§3.4). **Resolved (user, 2026-11-13):** variable values only. Server constants are written literally.
 2. **Rate limits on the link routes.** The spec sets limits only for sign-in (§5.2) but says the link steps "match sign-in". This design applies the same three limits under separate keys (`link_challenge:*`, `link_verify:*`), using the existing config keys and adding no new ones. **Resolved (user, 2026-11-13):** apply the same limits to the link routes.
 3. **A new runtime dependency, `bs58` 6.0.0** (plus `base-x` 5.0.1 through the lockfile), chosen over `@solana/kit` so that PR 03's kit pin stays open (§1.2). **Resolved (user, 2026-11-13):** approved.
+
+## Changes during build (2026-11-13)
+
+Review-driven changes approved by the user or by spec ruling; the sections above are updated where they conflict.
+
+a. Client IP: with `TRUST_PROXY=true` it is the rightmost `X-Forwarded-For` entry, normalized (IPv4-mapped IPv6 to dotted IPv4, IPv6 canonical lowercase compressed, zone ids to `unknown`). This assumes one appending proxy hop.
+b. The `rate_limited` security event and its warn log are written only on the first rejection in each window; later rejections still return 429 with `Retry-After`.
+c. Ed25519 verification rejects small-order and non-canonical public keys before calling `node:crypto`.
+d. `auth_challenges._id` is a random 96-bit ObjectId (`randomObjectId()`), not driver-generated.
+e. `GET /sessions` items include `network` (decision A4). Revoking an already-revoked own session is a 204 no-op with no second event.

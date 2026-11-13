@@ -196,6 +196,52 @@ describe("module boundary lint rules", { timeout: 60_000 }, () => {
       virtualPath: "src/instrumentation-node.ts",
       expected: [[1, PROPS, MSG.env]],
     },
+
+    // --- PR 02a: the auth module and the v1 route tree get the same rules (no new scope) ---
+    {
+      fixture: "env-outside-config.ts",
+      virtualPath: "src/modules/auth/internal/__lint__.ts",
+      expected: [
+        [1, IMPORTS, MSG.env],
+        [3, PROPS, MSG.env],
+        [4, PROPS, MSG.env],
+        [4, SYNTAX, MSG.env],
+        [5, SYNTAX, MSG.env],
+      ],
+    },
+    {
+      fixture: "mongodb-outside-database.ts",
+      virtualPath: "src/modules/auth/internal/__lint__.ts",
+      expected: [
+        [1, IMPORTS, MSG.mongodb],
+        [4, SYNTAX, MSG.mongodb],
+      ],
+    },
+    {
+      fixture: "module-imports-app.ts",
+      virtualPath: "src/modules/auth/__lint__.ts",
+      expected: [[1, IMPORTS, MSG.app]],
+    },
+    {
+      fixture: "relative-escape.ts",
+      virtualPath: "src/modules/auth/internal/__lint__.ts",
+      expected: [[1, IMPORTS, MSG.escape]],
+    },
+    {
+      fixture: "nested-internal.ts",
+      virtualPath: "src/modules/auth/internal/sub/__lint__.ts",
+      expected: [[1, SYNTAX, MSG.flat]],
+    },
+    {
+      fixture: "console-call.ts",
+      virtualPath: "src/modules/security/internal/__lint__.ts",
+      expected: [[1, CONSOLE, MSG.console]],
+    },
+    {
+      fixture: "deep-import.ts",
+      virtualPath: "src/app/api/v1/__lint__/deep.ts",
+      expected: [[1, IMPORTS, MSG.deep]],
+    },
   ])("$fixture linted as $virtualPath", async ({ fixture, virtualPath, expected }) => {
     const messages = await boundaryMessages(fixture, virtualPath);
 
