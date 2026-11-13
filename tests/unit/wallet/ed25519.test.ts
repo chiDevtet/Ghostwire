@@ -77,11 +77,55 @@ describe("verifyEd25519", () => {
       expect(verifyEd25519(identity, message, signature)).toBe(false);
     });
 
-    it.each(SMALL_ORDER_KEYS)("rejects small-order key %s", (keyHex) => {
-      const signature = new Uint8Array(64);
-      signature[0] = 0x01;
-      expect(verifyEd25519(hex(keyHex), utf8("m"), signature)).toBe(false);
-      expect(verifyEd25519(hex(keyHex), utf8("m"), new Uint8Array(64))).toBe(false);
+    const NON_CANONICAL_KEYS = [
+      "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "0100000000000000000000000000000000000000000000000000000000000080",
+      "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+    ];
+
+    const NO_TRIVIAL_FORGERY = new Set([
+      "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "0000000000000000000000000000000000000000000000000000000000000000",
+      "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+      "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+      "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+    ]);
+
+    const identityR = new Uint8Array(64);
+    identityR[0] = 0x01;
+    const zeros = new Uint8Array(64);
+
+    it.each([...SMALL_ORDER_KEYS, ...NON_CANONICAL_KEYS])(
+      "blocks forgery under small-order key %s",
+      (keyHex) => {
+        const message = utf8("m");
+        const key = createPublicKey({
+          key: Buffer.concat([SPKI_PREFIX, Buffer.from(keyHex, "hex")]),
+          format: "der",
+          type: "spki",
+        });
+        const rawAccepts = [identityR, zeros].some((sig) => {
+          try {
+            return verify(null, message, key, sig);
+          } catch {
+            return false;
+          }
+        });
+        // A real forgery iff raw node:crypto accepts one of the trivial signatures. These keys
+        // are small-order but neither trivial signature verifies with raw crypto; still blocked.
+        if (!NO_TRIVIAL_FORGERY.has(keyHex)) expect(rawAccepts).toBe(true);
+        expect(verifyEd25519(hex(keyHex), message, identityR)).toBe(false);
+        expect(verifyEd25519(hex(keyHex), message, zeros)).toBe(false);
+      },
+    );
+
+    it("rejects a non-canonical, non-small-order key (y >= p)", () => {
+      // y = p + 5, small order is not involved.
+      const key = hex("f2ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f");
+      expect(verifyEd25519(key, utf8("m"), identityR)).toBe(false);
+      expect(verifyEd25519(key, utf8("m"), zeros)).toBe(false);
     });
   });
 
