@@ -26,8 +26,9 @@ export function hasErrorLabelDeep(error: unknown, label: string): boolean {
 
 /**
  * Connectivity -> DependencyUnavailableError; duplicate key -> ConflictError("DUPLICATE_KEY");
- * anything else is returned unchanged. The driver error is always kept as `cause`, so
- * transaction labels survive the mapping.
+ * anything else is returned unchanged. Connectivity errors keep the driver error as `cause`, so
+ * transaction labels survive the mapping. Duplicate-key errors carry a sanitized cause instead
+ * (the driver message and stack contain the duplicated value); 11000 has no transient labels.
  */
 export function mapMongoError(error: unknown): unknown {
   if (
@@ -45,7 +46,8 @@ export function mapMongoError(error: unknown): unknown {
     return new ConflictError({
       code: "DUPLICATE_KEY",
       safeMessage: "Resource already exists",
-      cause: error,
+      // Never the driver error: its message and stack carry the duplicated key value.
+      cause: Object.assign(new Error("duplicate key"), { code: DUPLICATE_KEY_CODE }),
     });
   }
   return error;

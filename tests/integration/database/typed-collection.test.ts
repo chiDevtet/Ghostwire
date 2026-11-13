@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getDb, typedCollection, withTransaction } from "@/modules/database";
 import {
   ConflictError,
+  createLogger,
   DependencyUnavailableError,
   InternalError,
   ValidationError,
@@ -118,7 +119,30 @@ describe("typedCollection", () => {
       expect(field).not.toContain("E11000");
       expect(field).not.toContain("dup_secret_unique");
     }
-    expect(error.cause).toBeInstanceOf(Error);
+    const cause = error.cause as Error & { code?: number };
+    expect(cause).toBeInstanceOf(Error);
+    expect(cause.message).toBe("duplicate key");
+    expect(cause.code).toBe(11000);
+    for (const text of [cause.message, cause.stack ?? ""]) {
+      expect(text).not.toContain(secret);
+      expect(text).not.toContain("E11000");
+    }
+  });
+
+  it("keeps the duplicated value out of a serialized log line", async () => {
+    const db = await getDb();
+    await db.collection("dup_log_probe").createIndex({ ref: 1 }, { unique: true, name: "dup_log_unique" });
+    const dups = typedCollection("dup_log_probe", strictSchema);
+    const secret = "SENTINEL-LOG-VALUE-7c1d";
+    await dups.insertOne({ ref: secret, amount: "1" });
+    const err = await dups.insertOne({ ref: secret, amount: "2" }).catch((e: unknown) => e);
+    const lines: string[] = [];
+    const captured = createLogger({ level: "debug", sink: { write: (_level, line) => void lines.push(line) } });
+    captured.error("x", { err });
+    expect(lines).toHaveLength(1);
+    for (const needle of [secret, "E11000", "dup_log_unique", "dup key"]) {
+      expect(lines[0]).not.toContain(needle);
+    }
   });
 
   it("honours the session so a failed transaction persists nothing", async () => {
