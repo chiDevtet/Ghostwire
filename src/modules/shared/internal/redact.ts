@@ -14,8 +14,8 @@ const SENSITIVE_KEY_PARTS = [
   "cookie",
 ] as const;
 
-/** A scheme plus the rest of its whitespace- and quote-delimited token. */
-const URI_TOKEN = /([a-z][a-z0-9+.-]*:\/\/)([^\s"'<>]*)/gi;
+/** A scheme plus the rest of its whitespace-delimited token. */
+const URI_TOKEN = /([a-z][a-z0-9+.-]*:\/\/)(\S*)/gi;
 const MAX_DEPTH = 8;
 const CIRCULAR = "[Circular]";
 const TRUNCATED = "[Truncated]";
@@ -26,11 +26,18 @@ function isSensitiveKey(key: string): boolean {
 }
 
 /**
- * Replaces the userinfo of a credentialed URI with `[REDACTED]@`. Everything up to the
- * LAST `@` in the same token counts as userinfo, so unencoded `@` or `/` in a password
- * cannot leak. A token counts as credentialed when its first `@` comes before any `/`
- * (`user@host`) or follows a `:` (`user:pass@host`). This keeps `https://example.com/a@b`
- * intact. Over-redaction (for example a `host:port/path@x` token) is the accepted safe failure.
+ * Replaces the userinfo of a credentialed URI with `[REDACTED]@`.
+ *
+ * Tokens are delimited by whitespace only, so quotes and angle brackets inside a password
+ * (`u:p'q@h`, `u:p"q@h`, `u:p<q>r@h`) cannot end the token early. Everything up to the LAST
+ * `@` in the same token counts as userinfo, so unencoded `@` or `/` in a password cannot leak.
+ * A token counts as credentialed when its first `@` comes before any `/` (`user@host`) or
+ * follows a `:` (`user:pass@host`). This keeps `https://example.com/a@b` intact.
+ *
+ * Accepted over-redaction (safe failure): a query-string `@`, comma-joined URIs, a
+ * `host:port/path@x` token, and everything before the last `@` in a token that also holds
+ * other quoted JSON (for example `{"uri":"mongodb://u:p@h/x","o":"a@b"}`).
+ * Accepted residual risk: a password containing whitespace is not scrubbed past that space.
  */
 export function scrubString(value: string): string {
   return value.replace(URI_TOKEN, (match: string, scheme: string, rest: string) => {

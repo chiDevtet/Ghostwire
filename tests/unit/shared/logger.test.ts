@@ -86,6 +86,28 @@ describe("redact", () => {
     expect(redact("https://example.com/a")).toBe("https://example.com/a");
   });
 
+  it("scrubs a single quote inside an unencoded password", () => {
+    expect(redact("mongodb://u:p'q@h/x")).toBe("mongodb://[REDACTED]@h/x");
+  });
+
+  it("scrubs a double quote inside an unencoded password", () => {
+    expect(redact('mongodb://u:p"q@h/x')).toBe("mongodb://[REDACTED]@h/x");
+  });
+
+  it("scrubs angle brackets inside an unencoded password", () => {
+    expect(redact("mongodb://u:p<q>r@h/x")).toBe("mongodb://[REDACTED]@h/x");
+  });
+
+  it("scrubs a URI wrapped in quotes without touching the quotes", () => {
+    expect(redact('connect "mongodb://u:p@h/x" failed')).toBe(
+      'connect "mongodb://[REDACTED]@h/x" failed',
+    );
+  });
+
+  it("keeps https://example.com/a@b unchanged under the whitespace-only token rule", () => {
+    expect(redact("https://example.com/a@b")).toBe("https://example.com/a@b");
+  });
+
   it("walks Map and Set", () => {
     const out = redact({
       m: new Map<string, string>([
