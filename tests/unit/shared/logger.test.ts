@@ -62,6 +62,30 @@ describe("redact", () => {
     expect(redact("see https://example.com/a@b")).toBe("see https://example.com/a@b");
   });
 
+  it("scrubs through the last @ in a token when the password contains an unencoded @", () => {
+    expect(redact("mongodb://u:p@ss@h/x")).toBe("mongodb://[REDACTED]@h/x");
+  });
+
+  it("scrubs through the last @ in a token when the password contains an unencoded /", () => {
+    expect(redact("mongodb://u:pa/ss@h/x")).toBe("mongodb://[REDACTED]@h/x");
+  });
+
+  it("keeps the SRV scheme, host, path and query after scrubbing", () => {
+    expect(redact("mongodb+srv://user:pw@cluster.example.net/db?x=1")).toBe(
+      "mongodb+srv://[REDACTED]@cluster.example.net/db?x=1",
+    );
+  });
+
+  it("scrubs two URIs in one string independently", () => {
+    expect(redact("a mongodb://u1:p1@h1/x and mongodb://u2:p2@h2/y end")).toBe(
+      "a mongodb://[REDACTED]@h1/x and mongodb://[REDACTED]@h2/y end",
+    );
+  });
+
+  it("leaves a URI with no userinfo unchanged", () => {
+    expect(redact("https://example.com/a")).toBe("https://example.com/a");
+  });
+
   it("walks Map and Set", () => {
     const out = redact({
       m: new Map<string, string>([

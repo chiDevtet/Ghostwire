@@ -14,7 +14,8 @@ const SENSITIVE_KEY_PARTS = [
   "cookie",
 ] as const;
 
-const CREDENTIAL_URI = /([a-z][a-z0-9+.-]*:\/\/)[^\s/@]+@/gi;
+/** A scheme plus the rest of its whitespace- and quote-delimited token. */
+const URI_TOKEN = /([a-z][a-z0-9+.-]*:\/\/)([^\s"'<>]*)/gi;
 const MAX_DEPTH = 8;
 const CIRCULAR = "[Circular]";
 const TRUNCATED = "[Truncated]";
@@ -24,9 +25,24 @@ function isSensitiveKey(key: string): boolean {
   return SENSITIVE_KEY_PARTS.some((part) => lower.includes(part));
 }
 
-/** Replaces any `scheme://user:pass@` credential segment with `scheme://[REDACTED]@`. */
+/**
+ * Replaces the userinfo of a credentialed URI with `[REDACTED]@`. Everything up to the
+ * LAST `@` in the same token counts as userinfo, so unencoded `@` or `/` in a password
+ * cannot leak. A token counts as credentialed when its first `@` comes before any `/`
+ * (`user@host`) or follows a `:` (`user:pass@host`). This keeps `https://example.com/a@b`
+ * intact. Over-redaction (for example a `host:port/path@x` token) is the accepted safe failure.
+ */
 export function scrubString(value: string): string {
-  return value.replace(CREDENTIAL_URI, `$1${REDACTED}@`);
+  return value.replace(URI_TOKEN, (match: string, scheme: string, rest: string) => {
+    const lastAt = rest.lastIndexOf("@");
+    if (lastAt === -1) return match;
+    const firstAt = rest.indexOf("@");
+    const firstSlash = rest.indexOf("/");
+    const credentialed =
+      rest.slice(0, firstAt).includes(":") || firstSlash === -1 || firstAt < firstSlash;
+    if (!credentialed) return match;
+    return `${scheme}${REDACTED}@${rest.slice(lastAt + 1)}`;
+  });
 }
 
 /** Pure: returns a JSON-safe, redacted copy of `value`. Never mutates the input. */
