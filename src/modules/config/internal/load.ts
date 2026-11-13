@@ -1,4 +1,5 @@
 import { ConfigError, setLogLevel, type ConfigIssue, type LogLevel } from "@/modules/shared";
+import type { SolanaNetwork } from "@/modules/validation";
 import {
   ENV_KEYS,
   INVALID_REASONS,
@@ -14,6 +15,16 @@ export interface AppConfig {
   readonly MONGODB_URI: string;
   readonly MONGODB_DB_NAME: string;
   readonly LOG_LEVEL: LogLevel;
+  /** Public origin, scheme://host[:port]. https gives the __Host- Secure cookie. */
+  readonly APP_ORIGIN: string;
+  /** Frozen, de-duplicated, non-empty. */
+  readonly SOLANA_NETWORKS: readonly SolanaNetwork[];
+  readonly TRUST_PROXY: boolean;
+  readonly SESSION_IDLE_DAYS: number;
+  readonly SESSION_MAX_DAYS: number;
+  readonly RATE_LIMIT_CHALLENGE_PER_MIN: number;
+  readonly RATE_LIMIT_CHALLENGE_PER_HOUR_ADDRESS: number;
+  readonly RATE_LIMIT_VERIFY_PER_MIN: number;
 }
 
 export type EnvSource = Readonly<Record<string, string | undefined>>;
@@ -54,5 +65,8 @@ function parseConfig(env: EnvSource): AppConfig {
     }));
     throw new ConfigError(issues);
   }
-  return Object.freeze({ ...result.data });
+  return Object.freeze({
+    ...result.data,
+    SOLANA_NETWORKS: Object.freeze([...result.data.SOLANA_NETWORKS]),
+  });
 }

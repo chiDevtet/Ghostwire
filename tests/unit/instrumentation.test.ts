@@ -3,11 +3,13 @@ import { register } from "@/instrumentation";
 import { resetConfigForTests } from "@/modules/config";
 import { ConfigError, logger, setLogLevel } from "@/modules/shared";
 
+/** Port 1: nothing listens there, so the unit project can never reach a developer mongod. */
 const VALID = {
   NODE_ENV: "test",
-  MONGODB_URI: "mongodb://127.0.0.1:27017/?replicaSet=rs0",
+  MONGODB_URI: "mongodb://127.0.0.1:1/?replicaSet=rs0",
   MONGODB_DB_NAME: "ghostwire_test",
   LOG_LEVEL: "error",
+  APP_ORIGIN: "https://ghostwire.test",
 };
 
 function stubEnv(env: Readonly<Record<string, string>>): void {
