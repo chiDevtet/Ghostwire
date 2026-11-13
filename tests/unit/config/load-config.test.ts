@@ -50,11 +50,12 @@ describe("loadConfig(env)", () => {
   });
 
   it("accepts mongodb+srv and multi-host seed lists", () => {
-    expect(loadConfig({ ...VALID, MONGODB_URI: "mongodb+srv://cluster.example.net/" }).MONGODB_URI).toBe(
-      "mongodb+srv://cluster.example.net/",
-    );
     expect(
-      loadConfig({ ...VALID, MONGODB_URI: "mongodb://h1:27017,h2:27017/?replicaSet=rs0" }).MONGODB_URI,
+      loadConfig({ ...VALID, MONGODB_URI: "mongodb+srv://cluster.example.net/" }).MONGODB_URI,
+    ).toBe("mongodb+srv://cluster.example.net/");
+    expect(
+      loadConfig({ ...VALID, MONGODB_URI: "mongodb://h1:27017,h2:27017/?replicaSet=rs0" })
+        .MONGODB_URI,
     ).toBe("mongodb://h1:27017,h2:27017/?replicaSet=rs0");
   });
 
@@ -69,7 +70,11 @@ describe("loadConfig(env)", () => {
       value: `postgres://${SENTINEL}`,
       reason: "Must be a mongodb:// or mongodb+srv:// connection string",
     },
-    { key: "MONGODB_DB_NAME", value: `bad/${SENTINEL}`, reason: "Must be 1-63 chars of A-Z a-z 0-9 _ -" },
+    {
+      key: "MONGODB_DB_NAME",
+      value: `bad/${SENTINEL}`,
+      reason: "Must be 1-63 chars of A-Z a-z 0-9 _ -",
+    },
     {
       key: "LOG_LEVEL",
       value: SENTINEL,
@@ -141,7 +146,9 @@ describe("loadConfig() from process.env", () => {
     stubValidEnv();
     resetConfigForTests();
     const cached = loadConfig();
-    expect(loadConfig({ ...VALID, MONGODB_DB_NAME: "explicit_db" }).MONGODB_DB_NAME).toBe("explicit_db");
+    expect(loadConfig({ ...VALID, MONGODB_DB_NAME: "explicit_db" }).MONGODB_DB_NAME).toBe(
+      "explicit_db",
+    );
     expect(loadConfig()).toBe(cached);
   });
 

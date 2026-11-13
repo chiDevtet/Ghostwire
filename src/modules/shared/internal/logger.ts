@@ -48,7 +48,9 @@ export function createLogger(options: CreateLoggerOptions): Logger {
       let line: string;
       try {
         const redacted = fields === undefined ? {} : redact(fields);
-        line = JSON.stringify(Object.assign({}, reserved, isRecord(redacted) ? redacted : {}, reserved));
+        line = JSON.stringify(
+          Object.assign({}, reserved, isRecord(redacted) ? redacted : {}, reserved),
+        );
       } catch {
         line = JSON.stringify({ ...reserved, logError: "serialization_failed" });
       }

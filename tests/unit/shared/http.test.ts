@@ -39,37 +39,62 @@ function silenceLoggerError() {
 
 describe("toErrorResponse", () => {
   it.each([
-    { error: new ValidationError({ message: SENTINEL }), status: 400, code: "VALIDATION_FAILED", message: "Invalid request" },
-    { error: new NotFoundError({ message: SENTINEL }), status: 404, code: "NOT_FOUND", message: "Not found" },
-    { error: new ConflictError({ message: SENTINEL }), status: 409, code: "CONFLICT", message: "Conflict" },
+    {
+      error: new ValidationError({ message: SENTINEL }),
+      status: 400,
+      code: "VALIDATION_FAILED",
+      message: "Invalid request",
+    },
+    {
+      error: new NotFoundError({ message: SENTINEL }),
+      status: 404,
+      code: "NOT_FOUND",
+      message: "Not found",
+    },
+    {
+      error: new ConflictError({ message: SENTINEL }),
+      status: 409,
+      code: "CONFLICT",
+      message: "Conflict",
+    },
     {
       error: new DependencyUnavailableError("database", { message: SENTINEL }),
       status: 503,
       code: "DEPENDENCY_UNAVAILABLE",
       message: "Service temporarily unavailable",
     },
-    { error: new InternalError({ message: SENTINEL }), status: 500, code: "INTERNAL", message: "Internal error" },
+    {
+      error: new InternalError({ message: SENTINEL }),
+      status: 500,
+      code: "INTERNAL",
+      message: "Internal error",
+    },
     {
       error: new ConfigError([{ key: SENTINEL, reason: "Required" }]),
       status: 500,
       code: "CONFIG_INVALID",
       message: "Internal error",
     },
-  ])("maps $code to $status with only the safe message", async ({ error, status, code, message }) => {
-    const logError = silenceLoggerError();
-    const res = toErrorResponse(error);
-    expect(res.status).toBe(status);
-    expect(res.headers.get("cache-control")).toBe("no-store");
-    const text = await res.text();
-    expect(JSON.parse(text)).toEqual({ code, message });
-    expect(text).not.toContain(SENTINEL);
-    expect(text).not.toContain("stack");
-    expect(logError).toHaveBeenCalledWith("request failed", { err: error });
-  });
+  ])(
+    "maps $code to $status with only the safe message",
+    async ({ error, status, code, message }) => {
+      const logError = silenceLoggerError();
+      const res = toErrorResponse(error);
+      expect(res.status).toBe(status);
+      expect(res.headers.get("cache-control")).toBe("no-store");
+      const text = await res.text();
+      expect(JSON.parse(text)).toEqual({ code, message });
+      expect(text).not.toContain(SENTINEL);
+      expect(text).not.toContain("stack");
+      expect(logError).toHaveBeenCalledWith("request failed", { err: error });
+    },
+  );
 
   it("adds Retry-After only for DependencyUnavailableError", () => {
     silenceLoggerError();
-    expect(toErrorResponse(new DependencyUnavailableError("database")).headers.get("retry-after")).toBe("5");
+    expect(
+      toErrorResponse(new DependencyUnavailableError("database")).headers.get("retry-after"),
+    ).toBe("5");
     expect(toErrorResponse(new NotFoundError()).headers.get("retry-after")).toBeNull();
   });
 

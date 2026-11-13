@@ -96,7 +96,11 @@ function walkEntries(
   return out;
 }
 
-function walkError(error: Error, depth: number, ancestors: WeakSet<object>): Record<string, unknown> {
+function walkError(
+  error: Error,
+  depth: number,
+  ancestors: WeakSet<object>,
+): Record<string, unknown> {
   const out: Record<string, unknown> = { name: error.name, message: scrubString(error.message) };
   const { code, errorLabels } = error as { code?: unknown; errorLabels?: unknown };
   if (code !== undefined) out.code = walk(code, depth + 1, ancestors);

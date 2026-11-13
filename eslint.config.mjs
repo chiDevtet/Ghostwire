@@ -91,7 +91,8 @@ const R4_ENV = {
   ],
   syntax: [
     {
-      selector: "VariableDeclarator[init.name='process'] > ObjectPattern > Property[key.name='env']",
+      selector:
+        "VariableDeclarator[init.name='process'] > ObjectPattern > Property[key.name='env']",
       message: MESSAGES.env,
     },
     {

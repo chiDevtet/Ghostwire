@@ -32,7 +32,9 @@ afterEach(async () => {
 describe("typedCollection", () => {
   it("rejects invalid documents with DOCUMENT_INVALID and writes nothing", async () => {
     const probes = typedCollection(COLLECTION, strictSchema);
-    const error: unknown = await probes.insertOne({ ref: "", amount: "1" }).catch((e: unknown) => e);
+    const error: unknown = await probes
+      .insertOne({ ref: "", amount: "1" })
+      .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ValidationError);
     expect((error as ValidationError).code).toBe("DOCUMENT_INVALID");
     expect((error as ValidationError).safeMessage).toBe("Invalid document");
@@ -97,10 +99,14 @@ describe("typedCollection", () => {
 
   it("maps a duplicate key to ConflictError DUPLICATE_KEY", async () => {
     const db = await getDb();
-    await db.collection("dup_probe").createIndex({ ref: 1 }, { unique: true, name: "dup_ref_unique" });
+    await db
+      .collection("dup_probe")
+      .createIndex({ ref: 1 }, { unique: true, name: "dup_ref_unique" });
     const dups = typedCollection("dup_probe", strictSchema);
     await dups.insertOne({ ref: "same", amount: "1" });
-    const error: unknown = await dups.insertOne({ ref: "same", amount: "2" }).catch((e: unknown) => e);
+    const error: unknown = await dups
+      .insertOne({ ref: "same", amount: "2" })
+      .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ConflictError);
     expect((error as ConflictError).code).toBe("DUPLICATE_KEY");
     expect((error as ConflictError).safeMessage).toBe("Resource already exists");
@@ -108,11 +114,15 @@ describe("typedCollection", () => {
 
   it("never puts the duplicated value or driver text into safeMessage, code or message", async () => {
     const db = await getDb();
-    await db.collection("dup_secret_probe").createIndex({ ref: 1 }, { unique: true, name: "dup_secret_unique" });
+    await db
+      .collection("dup_secret_probe")
+      .createIndex({ ref: 1 }, { unique: true, name: "dup_secret_unique" });
     const dups = typedCollection("dup_secret_probe", strictSchema);
     const secret = "SENTINEL-DUP-VALUE-9f3a";
     await dups.insertOne({ ref: secret, amount: "1" });
-    const error = (await dups.insertOne({ ref: secret, amount: "2" }).catch((e: unknown) => e)) as ConflictError;
+    const error = (await dups
+      .insertOne({ ref: secret, amount: "2" })
+      .catch((e: unknown) => e)) as ConflictError;
     expect(error).toBeInstanceOf(ConflictError);
     for (const field of [error.safeMessage, error.code, error.message]) {
       expect(field).not.toContain(secret);
@@ -131,13 +141,18 @@ describe("typedCollection", () => {
 
   it("keeps the duplicated value out of a serialized log line", async () => {
     const db = await getDb();
-    await db.collection("dup_log_probe").createIndex({ ref: 1 }, { unique: true, name: "dup_log_unique" });
+    await db
+      .collection("dup_log_probe")
+      .createIndex({ ref: 1 }, { unique: true, name: "dup_log_unique" });
     const dups = typedCollection("dup_log_probe", strictSchema);
     const secret = "SENTINEL-LOG-VALUE-7c1d";
     await dups.insertOne({ ref: secret, amount: "1" });
     const err = await dups.insertOne({ ref: secret, amount: "2" }).catch((e: unknown) => e);
     const lines: string[] = [];
-    const captured = createLogger({ level: "debug", sink: { write: (_level, line) => void lines.push(line) } });
+    const captured = createLogger({
+      level: "debug",
+      sink: { write: (_level, line) => void lines.push(line) },
+    });
     captured.error("x", { err });
     expect(lines).toHaveLength(1);
     for (const needle of [secret, "E11000", "dup_log_unique", "dup key"]) {

@@ -31,15 +31,32 @@ describe("registerIndexes", () => {
 
   it("throws INDEX_REGISTRY_CONFLICT when a name is re-registered with a different spec", () => {
     registerIndexes("index_probe", [BY_REF]);
-    const error = thrownBy(() => registerIndexes("index_probe", [{ ...BY_REF, key: { other: 1 } }]));
+    const error = thrownBy(() =>
+      registerIndexes("index_probe", [{ ...BY_REF, key: { other: 1 } }]),
+    );
     expect(error).toBeInstanceOf(InternalError);
     expect((error as InternalError).code).toBe("INDEX_REGISTRY_CONFLICT");
   });
 
   it.each([
-    { label: "collection name", collection: "BadName", spec: BY_REF, code: "COLLECTION_NAME_INVALID" },
-    { label: "index name", collection: "index_probe", spec: { ...BY_REF, name: "has space" }, code: "INDEX_SPEC_INVALID" },
-    { label: "empty key", collection: "index_probe", spec: { ...BY_REF, key: {} }, code: "INDEX_SPEC_INVALID" },
+    {
+      label: "collection name",
+      collection: "BadName",
+      spec: BY_REF,
+      code: "COLLECTION_NAME_INVALID",
+    },
+    {
+      label: "index name",
+      collection: "index_probe",
+      spec: { ...BY_REF, name: "has space" },
+      code: "INDEX_SPEC_INVALID",
+    },
+    {
+      label: "empty key",
+      collection: "index_probe",
+      spec: { ...BY_REF, key: {} },
+      code: "INDEX_SPEC_INVALID",
+    },
     {
       label: "direction",
       collection: "index_probe",

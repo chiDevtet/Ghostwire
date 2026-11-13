@@ -20,7 +20,10 @@ export class AppError extends Error {
   readonly safeMessage: string;
 
   constructor(init: AppErrorInit) {
-    super(init.message ?? init.safeMessage, init.cause === undefined ? undefined : { cause: init.cause });
+    super(
+      init.message ?? init.safeMessage,
+      init.cause === undefined ? undefined : { cause: init.cause },
+    );
     this.name = new.target.name;
     this.code = init.code;
     this.httpStatus = init.httpStatus;
@@ -46,7 +49,12 @@ function initFrom(defaults: ErrorDefaults, options: AppErrorOptions): AppErrorIn
 
 export class ValidationError extends AppError {
   constructor(options: AppErrorOptions = {}) {
-    super(initFrom({ code: "VALIDATION_FAILED", httpStatus: 400, safeMessage: "Invalid request" }, options));
+    super(
+      initFrom(
+        { code: "VALIDATION_FAILED", httpStatus: 400, safeMessage: "Invalid request" },
+        options,
+      ),
+    );
   }
 }
 

@@ -85,7 +85,9 @@ function toIndexDescription(spec: IndexSpec): IndexDescription {
     key: { ...spec.key },
     ...(spec.unique === undefined ? {} : { unique: spec.unique }),
     ...(spec.sparse === undefined ? {} : { sparse: spec.sparse }),
-    ...(spec.expireAfterSeconds === undefined ? {} : { expireAfterSeconds: spec.expireAfterSeconds }),
+    ...(spec.expireAfterSeconds === undefined
+      ? {}
+      : { expireAfterSeconds: spec.expireAfterSeconds }),
     ...(spec.partialFilterExpression === undefined
       ? {}
       : { partialFilterExpression: { ...spec.partialFilterExpression } }),

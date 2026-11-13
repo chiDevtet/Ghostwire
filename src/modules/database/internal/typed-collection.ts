@@ -42,7 +42,10 @@ function issuePaths(error: z.ZodError): string {
  * must not declare `_id`). Writes store the parsed output; reads are parsed. Sync, no I/O.
  * @throws InternalError("COLLECTION_NAME_INVALID")
  */
-export function typedCollection<S extends z.ZodObject>(name: string, schema: S): TypedCollection<S> {
+export function typedCollection<S extends z.ZodObject>(
+  name: string,
+  schema: S,
+): TypedCollection<S> {
   assertCollectionName(name);
   type Stored = WithId<z.output<S>>;
 
@@ -79,10 +82,9 @@ export function typedCollection<S extends z.ZodObject>(name: string, schema: S):
       const data = asRecord(parsed.data);
       try {
         // Copy: the driver mutates the inserted object to add _id.
-        const { insertedId } = await (await collection()).insertOne(
-          { ...data },
-          { session: options.session },
-        );
+        const { insertedId } = await (
+          await collection()
+        ).insertOne({ ...data }, { session: options.session });
         return { _id: insertedId, ...data } as unknown as Stored;
       } catch (error) {
         throw mapMongoError(error);
@@ -91,7 +93,9 @@ export function typedCollection<S extends z.ZodObject>(name: string, schema: S):
 
     async findOne(filter, options = {}) {
       try {
-        const doc = await (await collection()).findOne(asDocumentFilter(filter), {
+        const doc = await (
+          await collection()
+        ).findOne(asDocumentFilter(filter), {
           session: options.session,
         });
         return doc === null ? null : parseStored(doc);

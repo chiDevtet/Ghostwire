@@ -17,7 +17,11 @@ const DUPLICATE_KEY_CODE = 11000;
  */
 export function hasErrorLabelDeep(error: unknown, label: string): boolean {
   let current: unknown = error;
-  for (let depth = 0; depth <= MAX_CAUSE_DEPTH && current !== undefined && current !== null; depth += 1) {
+  for (
+    let depth = 0;
+    depth <= MAX_CAUSE_DEPTH && current !== undefined && current !== null;
+    depth += 1
+  ) {
     if (current instanceof MongoError && current.hasErrorLabel(label)) return true;
     current = current instanceof Error ? current.cause : undefined;
   }

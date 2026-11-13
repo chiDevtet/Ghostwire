@@ -23,7 +23,9 @@ export async function ping(timeoutMs: number = DEFAULT_TIMEOUT_MS): Promise<void
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
       reject(
-        new DependencyUnavailableError("database", { message: `ping timed out after ${timeoutMs}ms` }),
+        new DependencyUnavailableError("database", {
+          message: `ping timed out after ${timeoutMs}ms`,
+        }),
       );
     }, timeoutMs);
   });

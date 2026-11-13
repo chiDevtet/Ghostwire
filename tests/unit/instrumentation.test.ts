@@ -46,7 +46,12 @@ describe("instrumentation register()", () => {
   it("logs the invalid keys and exits with code 1 on the Node runtime when config is invalid", async () => {
     const exit = stubExit();
     const error = vi.spyOn(logger, "error").mockImplementation(() => undefined);
-    stubEnv({ ...VALID, MONGODB_URI: "", NEXT_RUNTIME: "nodejs", NEXT_PHASE: "phase-production-server" });
+    stubEnv({
+      ...VALID,
+      MONGODB_URI: "",
+      NEXT_RUNTIME: "nodejs",
+      NEXT_PHASE: "phase-production-server",
+    });
     await expect(register()).rejects.toThrow("exit:1");
     expect(exit).toHaveBeenCalledWith(1);
     expect(error).toHaveBeenCalledTimes(1);

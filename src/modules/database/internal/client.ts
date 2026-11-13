@@ -49,7 +49,10 @@ async function connect(mongo: MongoClient): Promise<MongoClient> {
   } catch (cause) {
     if (readEntry()?.mongo === mongo) writeEntry(undefined);
     await mongo.close().catch(() => undefined);
-    throw new DependencyUnavailableError("database", { message: "MongoDB connection failed", cause });
+    throw new DependencyUnavailableError("database", {
+      message: "MongoDB connection failed",
+      cause,
+    });
   }
 }
 

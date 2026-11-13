@@ -34,10 +34,16 @@ type Expected = readonly [line: number, ruleId: string, message: string];
 let eslint: ESLint;
 
 beforeAll(() => {
-  eslint = new ESLint({ cwd: repoRoot, overrideConfigFile: path.join(repoRoot, "eslint.config.mjs") });
+  eslint = new ESLint({
+    cwd: repoRoot,
+    overrideConfigFile: path.join(repoRoot, "eslint.config.mjs"),
+  });
 });
 
-async function boundaryMessages(fixture: string, virtualPath: string): Promise<Linter.LintMessage[]> {
+async function boundaryMessages(
+  fixture: string,
+  virtualPath: string,
+): Promise<Linter.LintMessage[]> {
   const code = await readFile(path.join(repoRoot, "tests/fixtures/lint", fixture), "utf8");
   const [result] = await eslint.lintText(code, { filePath: path.join(repoRoot, virtualPath) });
   if (result === undefined) throw new Error(`no lint result for ${fixture}`);
@@ -106,8 +112,16 @@ describe("module boundary lint rules", { timeout: 60_000 }, () => {
       virtualPath: "src/modules/wallet/internal/sub/__lint__.ts",
       expected: [[1, SYNTAX, MSG.flat]],
     },
-    { fixture: "allowed-database.ts", virtualPath: "src/modules/database/internal/__lint__.ts", expected: [] },
-    { fixture: "allowed-config.ts", virtualPath: "src/modules/config/internal/__lint__.ts", expected: [] },
+    {
+      fixture: "allowed-database.ts",
+      virtualPath: "src/modules/database/internal/__lint__.ts",
+      expected: [],
+    },
+    {
+      fixture: "allowed-config.ts",
+      virtualPath: "src/modules/config/internal/__lint__.ts",
+      expected: [],
+    },
     { fixture: "allowed-config.ts", virtualPath: "src/instrumentation.ts", expected: [] },
 
     // --- fix round: files outside the named scopes still get the rules ---
@@ -188,7 +202,9 @@ describe("module boundary lint rules", { timeout: 60_000 }, () => {
     // Exact set of (line, ruleId) pairs, so a violation cannot move to another rule or line.
     const key = (line: number, ruleId: string | null): string => `${line}:${ruleId}`;
     const actualKeys = [...new Set(messages.map((m) => key(m.line, m.ruleId)))].sort();
-    expect(actualKeys).toEqual([...new Set(expected.map(([line, ruleId]) => key(line, ruleId)))].sort());
+    expect(actualKeys).toEqual(
+      [...new Set(expected.map(([line, ruleId]) => key(line, ruleId)))].sort(),
+    );
 
     // Every message on a (line, ruleId) is the configured one (ESLint prefixes its own text).
     for (const [line, ruleId, message] of expected) {

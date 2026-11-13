@@ -62,7 +62,12 @@ describe("withTransaction", () => {
     });
     expect(result).toBe(2);
     expect(calls).toBe(2);
-    expect(await coll.find({}).map((d) => d.ref).toArray()).toEqual(["attempt-2"]);
+    expect(
+      await coll
+        .find({})
+        .map((d) => d.ref)
+        .toArray(),
+    ).toEqual(["attempt-2"]);
   });
 
   it("throws DependencyUnavailableError with the labelled cause once attempts are exhausted", async () => {
@@ -75,7 +80,9 @@ describe("withTransaction", () => {
     expect(calls).toBe(3);
     expect(error).toBeInstanceOf(DependencyUnavailableError);
     expect((error as DependencyUnavailableError).cause).toBe(transient);
-    expect((error as DependencyUnavailableError).safeMessage).toBe("Service temporarily unavailable");
+    expect((error as DependencyUnavailableError).safeMessage).toBe(
+      "Service temporarily unavailable",
+    );
   });
 
   it("honours maxAttempts", async () => {
@@ -148,9 +155,11 @@ describe("withTransaction", () => {
   it("bounds commit retries on UnknownTransactionCommitResult by maxAttempts", async () => {
     const coll = await probe();
     const unknown = labelled(UNKNOWN_COMMIT);
-    const commit = vi.spyOn(ClientSession.prototype, "commitTransaction").mockImplementation(async () => {
-      throw unknown;
-    });
+    const commit = vi
+      .spyOn(ClientSession.prototype, "commitTransaction")
+      .mockImplementation(async () => {
+        throw unknown;
+      });
     let calls = 0;
     const error: unknown = await withTransaction(
       async (session) => {
@@ -186,9 +195,11 @@ describe("withTransaction", () => {
   it("rethrows an unlabelled commit error unchanged without retrying", async () => {
     const coll = await probe();
     const unlabelled = new MongoError("commit failed");
-    const commit = vi.spyOn(ClientSession.prototype, "commitTransaction").mockImplementationOnce(async () => {
-      throw unlabelled;
-    });
+    const commit = vi
+      .spyOn(ClientSession.prototype, "commitTransaction")
+      .mockImplementationOnce(async () => {
+        throw unlabelled;
+      });
     let calls = 0;
     const outcome = withTransaction(async (session) => {
       calls += 1;
