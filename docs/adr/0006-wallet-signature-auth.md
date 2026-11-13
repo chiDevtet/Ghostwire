@@ -120,6 +120,7 @@ whether accounts hold multiple wallets. ADR-0005 left Helius mainnet status unco
 
 ## Consequences
 
+- **IP pseudonymization (follow-up).** Rate-limit keys embed the client IP and are stored as unsalted SHA-256, so IPv4 values are recoverable by enumeration until the TTL removes them. Switching to a keyed (HMAC) hash is a tracked follow-up.
 - **Mainnet-binding risk (A4).** A `mainnet-beta` wallet can be bound before the Helius privacy
   layer is confirmed for mainnet (ADR-0005). Binding a mainnet wallet never implies privacy
   readiness. Every wallet and session response states its `network`, nothing in the API asserts
@@ -136,8 +137,10 @@ whether accounts hold multiple wallets. ADR-0005 left Helius mainnet status unco
 
 ## Scope / privacy / security impact
 
-Never stored: private keys, seed phrases, raw session tokens, the nonce as a field, signatures, IP
-addresses and email (asserted by `tests/integration/routes/v1/persistence.test.ts`). Logs never
+Client IPs are never stored in plain form. When `TRUST_PROXY=true`, an IP appears only pseudonymized, as part of an unsalted SHA-256 rate-limit key that expires with its window (IP-keyed windows are 1 minute, no window exceeds 1 hour, plus TTL sweep lag). IPv4 values are recoverable from these hashes by enumeration. A keyed (HMAC) hash is a tracked follow-up.
+
+Never stored: private keys, seed phrases, raw session tokens, the nonce as a field, signatures
+and email (asserted by `tests/integration/routes/v1/persistence.test.ts`). Logs never
 contain the token, its hash, the nonce, the signature or the full message (asserted by
 `tests/integration/routes/v1/logging.test.ts`). The specific `AUTH_FAILED` reason goes only to
 `security_events.reason` and the redacting logger, never to the response. A comprehensive security

@@ -143,7 +143,7 @@ Wallet-signature sign-in ([ADR-0006](docs/adr/0006-wallet-signature-auth.md)). E
 Errors are `{ code, message }`: `VALIDATION_FAILED`, `NETWORK_UNSUPPORTED` (400), `AUTH_FAILED`,
 `UNAUTHENTICATED` (401), `ORIGIN_REJECTED` (403), `NOT_FOUND` (404), `WALLET_ALREADY_LINKED`,
 `LAST_WALLET` (409), `RATE_LIMITED` (429, with `Retry-After`), `DEPENDENCY_UNAVAILABLE` (503,
-with `Retry-After`) and `INTERNAL` (500). Every response states the wallet or session `network`;
+with `Retry-After`) and `INTERNAL` (500). Every wallet and session response states its `network`;
 nothing in this API claims privacy capability.
 
 Notes:

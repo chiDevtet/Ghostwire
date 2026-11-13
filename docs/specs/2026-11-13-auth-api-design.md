@@ -72,7 +72,7 @@ Every response uses `noStoreJson`. Every non-GET request must pass the Origin ch
 | `DELETE /sessions/:id` | session | none | 204. Only the caller's own sessions; otherwise 404 |
 | `GET /wallets` | session | — | 200 `{ wallets: [{ id, address, network, provider, status, linkedAt }] }` |
 | `POST /wallets/link/challenge` | session | `{ address, network }` | 200 `{ challengeId, message, expiresAt }` |
-| `POST /wallets/link/verify` | session | `{ challengeId, signature, provider? }` | 201 `{ wallet }` |
+| `POST /wallets/link/verify` | session | `{ challengeId, signature, provider? }` | 201 `{ wallet }` when newly linked, 200 when the wallet is already linked to this account (reactivated if disconnected) |
 | `DELETE /wallets/:id` | session | none | 204. Refused with 409 `LAST_WALLET` if it is the account's only active wallet; 404 if not owned |
 
 `POST /auth/verify` also accepts an optional `provider` label (≤ 32 chars, `[a-z0-9_-]`). It is informational only and never trusted for behaviour.
@@ -96,7 +96,7 @@ All collections are declared with Zod schemas through `typedCollection`. Indexes
 
 The `security_events.type` values are `signin_success`, `signin_failed`, `wallet_linked`, `link_failed`, `wallet_unlinked`, `session_revoked` and `rate_limited`.
 
-Never stored: private keys, seed phrases, raw session tokens, raw nonces, IP addresses or email.
+Never stored: private keys, seed phrases, raw session tokens, raw nonces or email. Client IPs are never stored in plain form. When `TRUST_PROXY=true`, an IP appears only pseudonymized, as an unsalted SHA-256 of the rate-limit key, which expires with its window (≤ 1 hour). IPv4 values are recoverable from these hashes by enumeration. A keyed (HMAC) hash is a tracked follow-up.
 
 ## 5. Flows
 
@@ -234,7 +234,7 @@ Vitest, written test-first.
 
 1. Every endpoint in §3.3 behaves as specified, and every row of §7 is covered by at least one test.
 2. All entry gates in §3.1 are implemented, each with a regression test.
-3. No raw token, nonce, signature, IP or email is persisted. A test asserts this on the stored documents after the happy path.
+3. No raw token, nonce, signature, plain-form IP or email is persisted (an IP survives only inside the unsalted, TTL-expiring rate-limit key hash). A test asserts this on the stored documents after the happy path.
 4. `bun run lint`, `bun run typecheck`, `bun run test` and `bun run build` pass on a fresh clone with no `.env`. This keeps the PR 01 guarantee: `APP_ORIGIN` is required only at runtime and at boot, and the test harness supplies its own value.
 5. A new ADR-0006 records the auth design (A1–A5), the message format, the session model, and the mainnet-binding risk from A4. README and `.env.example` document the new config keys.
 
@@ -254,3 +254,4 @@ b. The `rate_limited` security event and its warn log are written only on the fi
 c. Ed25519 verification rejects small-order and non-canonical public keys before calling `node:crypto`.
 d. `auth_challenges._id` is a random 96-bit ObjectId (`randomObjectId()`), not driver-generated.
 e. `GET /sessions` items include `network` (decision A4). Revoking an already-revoked own session is a 204 no-op with no second event.
+f. `POST /wallets/link/verify` returns 201 when the wallet is newly linked and 200 when it is already linked to this account (an active wallet is returned unchanged; a disconnected one is reactivated).

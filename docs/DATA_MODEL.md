@@ -110,7 +110,7 @@ Implemented in PR 02a (owner: `auth`). One signature attempt per challenge.
 
 Implemented in PR 02a (owner: `security`). Fixed windows.
 
-- `_id`, `key` (`sha256("<route>:<kind>:<subject>")`; the IP exists only inside this hash), `windowStart`, `count`, `expiresAt`
+- `_id`, `key` (`sha256("<route>:<kind>:<subject>")`; a client IP appears only pseudonymized inside this unsalted hash, so IPv4 values are recoverable by enumeration; rows expire with their window via the `expiresAt` TTL index, IP-keyed windows being 1 minute and none exceeding 1 hour, plus TTL sweep lag; a keyed HMAC hash is a tracked follow-up), `windowStart`, `count`, `expiresAt`
 
 ## 3. Indexes
 
