@@ -26,3 +26,5 @@ export type { SessionCookieName } from "./internal/cookies";
 export { requestMeta } from "./internal/request";
 export { issueChallenge, verifySignIn } from "./internal/sign-in";
 export { createSession, logout, resolveSession } from "./internal/sessions";
+export { getMe, listWallets } from "./internal/account";
+export { withOrigin, withSession } from "./internal/wrappers";
