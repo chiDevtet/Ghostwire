@@ -1,5 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { baseUnits } from "@/modules/validation";
+import type { BaseUnits } from "@/modules/validation";
+
+describe("BaseUnits type contract", () => {
+  it("does not accept a JS number as a BaseUnits amount", () => {
+    expectTypeOf<number>().not.toExtend<BaseUnits>();
+  });
+});
 
 describe("baseUnits", () => {
   it.each<[string, bigint]>([

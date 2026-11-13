@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { isObjectIdString, objectIdString } from "@/modules/validation";
+import type { ObjectIdString } from "@/modules/validation";
 
 const LOWER = "507f1f77bcf86cd799439011";
 
@@ -18,6 +19,16 @@ describe("objectIdString", () => {
       expect(objectIdString.safeParse(input).success).toBe(false);
     },
   );
+});
+
+describe("ObjectIdString type contract", () => {
+  it("does not accept a plain string as an ObjectIdString", () => {
+    expectTypeOf<string>().not.toExtend<ObjectIdString>();
+  });
+
+  it("types the output of objectIdString.parse as ObjectIdString", () => {
+    expectTypeOf(objectIdString.parse(LOWER)).toEqualTypeOf<ObjectIdString>();
+  });
 });
 
 describe("isObjectIdString", () => {
