@@ -6,7 +6,7 @@
 
 ## Decision
 
-No Helius package is installed or called in this cycle. PR 03 (Helius adapter) will target
+No Helius package is installed or called in this cycle. PR 03 (Helius adapter) provisionally targets
 `@heliuslabs/spr` `0.9.0-alpha` (npm `latest` and `alpha` dist-tag, published 2026-11-04) together
 with its peer `@solana/kit` (`^8.3.0`), subject to re-verification at PR 03 start. The official docs
 name this package inconsistently (see Open items), and it is an alpha pre-release. `helius-sdk` is
@@ -183,10 +183,10 @@ The send helper `sendAndConfirmFactory` in the guides is example code imported f
 | Confirm whether external-wallet viewing-key handling differs by provider | Unanswered | The docs describe local vs delegated decryption generically. Nothing is provider-specific. | https://www.helius.dev/docs/privacy/concepts/encryption.md |
 | Confirm SOL support per wallet path | Partially answered | SOL is supported by the protocol and the SDK (`SOL_MINT`, `DepositAsset.sol()`). Per-wallet-path support is not documented, and no wallet path is documented for a dapp like ours. | https://www.helius.dev/docs/privacy/guides/deposit.md |
 | Confirm USDC official mint, token program and Ring support per wallet path | Partially answered | SPL and Token-2022 are supported generically, with a per-mint SPL interface created on first deposit. USDC appears only as an example asset. The privacy docs give no USDC mint address or token program, and nothing per wallet path. | https://www.helius.dev/docs/privacy/addresses.md; https://www.helius.dev/docs/privacy/concepts/architecture.md |
-| Confirm private recipient initialization requirements | Answered | Derive the shielded keypair, then register in the onchain registry (`getRegisterInstructionAsync` and `getSetMergeEncryptionInstructionAsync`). "Creating a private wallet does not require a deposit". `isWalletRegistered` / `getUserRecords` check registration. | https://www.helius.dev/docs/privacy/integration/wallet.md |
+| Confirm private recipient initialization requirements | Partially answered — documented for `@heliuslabs/spr` 0.9.0-alpha only; package name unconfirmed (spr vs zolana); see ADR-0005 | Derive the shielded keypair, then register in the onchain registry (`getRegisterInstructionAsync` and `getSetMergeEncryptionInstructionAsync`). "Creating a private wallet does not require a deposit". `isWalletRegistered` / `getUserRecords` check registration. The evidence comes from the wallet-provider guide, not a dapp path. | https://www.helius.dev/docs/privacy/integration/wallet.md |
 | Confirm exact behavior sending to normal public Solana address | Partially answered | "The Privacy SDK can resolve a private transfer to a private-to-public withdrawal, when the recipient does not have a Private Wallet". Withdrawals make the asset and amount public. No TypeScript call or opt-in/automatic semantics is documented. | https://www.helius.dev/docs/privacy/integration/wallet.md; https://www.helius.dev/docs/privacy/guides/withdraw.md |
 | Confirm public SOL fee payer/reserve requirements | Partially answered | The payer "signs and pays for the Solana transaction. A gas sponsor can pay the fee". The Forester tree fee is 5,000 lamports per tree updated, plus normal fees. Interface creators pay rent. No minimum reserve is documented. | https://www.helius.dev/docs/privacy/guides/transfer.md; https://www.helius.dev/docs/privacy/concepts/architecture.md |
-| Confirm deposit, transfer, history, withdrawal and confirmation/reconciliation APIs | Answered | Each flow has a TypeScript guide with exact names, all present in the 0.9.0-alpha types. Confirmation uses `client.confirmTransaction` + `atSlot`; reconciliation uses `getShieldedTransactionsBySignature` and slot-resumable pagination. | https://www.helius.dev/docs/privacy/guides/transfer.md; https://www.helius.dev/docs/api-reference/privacy.md |
+| Confirm deposit, transfer, history, withdrawal and confirmation/reconciliation APIs | Partially answered — documented for `@heliuslabs/spr` 0.9.0-alpha only; package name unconfirmed (spr vs zolana); see ADR-0005 | Each flow has a TypeScript guide with exact names, all present in the 0.9.0-alpha types. Confirmation uses `client.confirmTransaction` + `atSlot`; reconciliation uses `getShieldedTransactionsBySignature` and slot-resumable pagination. The docs hedge the public-address fallback ("can resolve"), and the `@heliuslabs/zolana` surface differs (no `./program` or `./internal` subpaths). | https://www.helius.dev/docs/privacy/guides/transfer.md; https://www.helius.dev/docs/api-reference/privacy.md |
 | Confirm production RPC/prover rate limits, pricing, failure modes and support | Partially answered | Credits and per-plan rate limits are published, as are indexer error codes and HTTP 429. Support is Telegram, email and contact form. Mainnet status is contradictory ("Beta, devnet only" vs "live on Solana mainnet"), and no SLA is documented. | https://www.helius.dev/docs/billing/rate-limits.md; https://www.helius.dev/docs/billing/credits.md; https://www.helius.dev/docs/api-reference/privacy.md |
 | Review latest audits and formal verification status | Partially answered | Certora (October 2026) and zkSecurity (August 2026) reports are listed; OtterSec is "Awaiting report"; trusted setup completed November 2, 2026. Formal verification status is not stated. The report PDFs were not reviewed in this task. | https://www.helius.dev/docs/privacy/security.md |
 
@@ -215,8 +215,18 @@ documentation alone. They still need the hands-on validation gate in the README 
   adapter code.
 - Server-side SDK use is limited to non-secret work (indexer reads of encrypted data, registry
   lookups, confirmation tracking). Those calls carry the Helius API key in a URL query parameter.
-  Per the global constraints, our redactor scrubs `user:pass@` URIs and secret-named keys but not query strings, so PR 03 must
-  keep the RPC URL out of logs or extend redaction.
+- **PR 03 prerequisite (log redaction):** before any Helius client is constructed (PR 03), extend
+  log redaction to scrub the `api-key` query-parameter value (and similar credential query
+  parameters) inside strings, with a regression test. Keeping the URL out of logs alone is
+  insufficient because SDK errors and stacks embed it. Review confirmed the gap: `scrubString` on a
+  message containing a devnet RPC URL with an `api-key` value returned it unchanged, because
+  key-name redaction applies only to object keys, never to substrings inside strings.
+- **PR 03 prerequisite (derivation signature):** the same applies to the `TSPP/derive/v1`
+  signature, which the docs call "the derivation seed". It is a string value, and `signature` is
+  only caught as an object key. Redaction must cover it wherever it appears inside strings, with a
+  regression test, before PR 03 handles it.
+- **PR 03 blocker (peer conflict):** `helius-sdk` 3.4.1 peers `@solana/kit ^6.9.0` and
+  `@heliuslabs/spr` peers `@solana/kit ^8.3.0`. One `@solana/kit` install cannot satisfy both.
 - Mainnet availability is contradictory across official pages. PR 03 should target devnet and treat
   mainnet as unconfirmed until Helius confirms it.
 - Proofs cost 1,000 credits each and are limited to 1–20 per second by plan. Both feed the hosting
@@ -227,7 +237,9 @@ documentation alone. They still need the hands-on validation gate in the README 
 - Scope: possible change. The wallet path is undetermined. If no external-wallet path exists and
   embedded wallets stay unavailable, the planned Phantom/Solflare support may need to change. No
   scope change is made by this ADR.
-- Privacy: the Default Ring is confidential, not anonymous. Per the docs, in a private transfer the
+- Privacy: the Default Ring is confidential, not anonymous. The anonymity-adjacent wording in the
+  docs' `llms.txt` indexes (which describe anonymous Custom Rings) is not adopted: this project uses
+  the Default Ring, and Custom Rings are not in scope. Per the docs, in a private transfer the
   "Asset" and "Amount" are "Private. Encrypted onchain", while "Sender" and "Recipient" are
   "Public. The Default Ring is confidential." A deposit from a public balance makes asset, amount,
   sender and recipient public. A withdrawal makes asset, amount and destination public. "The
@@ -264,6 +276,12 @@ documentation alone. They still need the hands-on validation gate in the README 
 - USDC: close with the official USDC mint and token program from Circle or Solana documentation,
   confirmation that a USDC SPL interface exists on the target cluster, and a devnet round trip per
   wallet path.
+- Private recipient initialization: documented for `@heliuslabs/spr` 0.9.0-alpha only, from the
+  wallet-provider guide. Close once the package name is confirmed and registration works on devnet
+  from the chosen wallet path.
+- Deposit, transfer, history, withdrawal and confirmation/reconciliation APIs: documented for
+  `@heliuslabs/spr` 0.9.0-alpha only. Close once the package name is confirmed (the
+  `@heliuslabs/zolana` surface differs) and each flow has been run and reconciled on devnet.
 - Public-address send: close with the exact SDK call and whether the fallback is automatic or
   explicit, verified on devnet.
 - Fee payer/reserve: close with measured fees on devnet and a documented or measured minimum SOL
@@ -272,3 +290,11 @@ documentation alone. They still need the hands-on validation gate in the README 
   status, an SLA or support terms, and the meaning of the SDK error codes.
 - Audits/formal verification: close by reading the Certora and zkSecurity reports, the OtterSec
   report once published, and any formal-verification statement.
+- Log redaction (PR 03 prerequisite): close with redaction that scrubs `api-key` query-parameter
+  values and similar credential parameters inside strings, plus the `TSPP/derive/v1` signature,
+  with regression tests, merged before any Helius client is constructed.
+- `@solana/kit` peer conflict (PR 03 blocker): `helius-sdk` needs `^6.9.0` and `@heliuslabs/spr`
+  needs `^8.3.0`. Close by confirming that PR 03 uses only the privacy SDK and pins one
+  `@solana/kit` 8.x version.
+- Wallet adapters (OPEN_DECISIONS §3): not evaluated in this cycle. Close with an evaluation of
+  the chosen wallet adapters against Next.js 16, Bun 1.4.4 and TypeScript 6.0.3.

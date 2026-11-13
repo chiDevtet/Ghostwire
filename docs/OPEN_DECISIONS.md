@@ -11,10 +11,10 @@ This is the source of truth for unresolved decisions. Do not silently invent ans
 - [ ] Confirm whether external-wallet viewing-key handling differs by provider. Unanswered by docs as of 2026-11-13 ([ADR-0005](adr/0005-helius-sdk-discovery.md)).
 - [ ] Confirm SOL support per wallet path. Partially answered ([ADR-0005](adr/0005-helius-sdk-discovery.md)): SOL supported by protocol and SDK; per-wallet-path support undocumented.
 - [ ] Confirm USDC official mint, token program and Ring support per wallet path. Partially answered ([ADR-0005](adr/0005-helius-sdk-discovery.md)): SPL/Token-2022 supported generically; no USDC mint, token program or per-wallet-path statement.
-- [x] Confirm private recipient initialization requirements. Answered by docs ([ADR-0005](adr/0005-helius-sdk-discovery.md); https://www.helius.dev/docs/privacy/integration/wallet.md).
+- [ ] Confirm private recipient initialization requirements. Partially answered — documented for `@heliuslabs/spr` 0.9.0-alpha only; package name unconfirmed (spr vs zolana); see [ADR-0005](adr/0005-helius-sdk-discovery.md).
 - [ ] Confirm exact behavior sending to normal public Solana address. Partially answered ([ADR-0005](adr/0005-helius-sdk-discovery.md)): docs say the SDK can fall back to a public withdrawal; exact call and semantics undocumented.
 - [ ] Confirm public SOL fee payer/reserve requirements. Partially answered ([ADR-0005](adr/0005-helius-sdk-discovery.md)): payer and 5,000-lamport tree fee documented; minimum reserve undocumented.
-- [x] Confirm deposit, transfer, history, withdrawal and confirmation/reconciliation APIs. Answered by docs ([ADR-0005](adr/0005-helius-sdk-discovery.md); https://www.helius.dev/docs/privacy/guides/transfer.md).
+- [ ] Confirm deposit, transfer, history, withdrawal and confirmation/reconciliation APIs. Partially answered — documented for `@heliuslabs/spr` 0.9.0-alpha only; package name unconfirmed (spr vs zolana); see [ADR-0005](adr/0005-helius-sdk-discovery.md).
 - [ ] Confirm production RPC/prover rate limits, pricing, failure modes and support. Partially answered ([ADR-0005](adr/0005-helius-sdk-discovery.md)): credits, rate limits and error codes published; mainnet status contradictory and no SLA.
 - [ ] Review latest audits and formal verification status. Partially answered ([ADR-0005](adr/0005-helius-sdk-discovery.md)): OtterSec report pending; formal verification status undocumented; reports not yet reviewed.
 
