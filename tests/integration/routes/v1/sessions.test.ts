@@ -24,6 +24,7 @@ interface SessionsBody {
     createdAt: string;
     lastSeenAt: string;
     expiresAt: string;
+    network: string;
     userAgent: string | null;
   }[];
 }
@@ -45,6 +46,11 @@ describe("GET /sessions", () => {
     const second = new TestClient();
     await signIn(second, wallet);
     await signIn(new TestClient(), createTestWallet());
+    const mainnet = new TestClient();
+    await signIn(mainnet, createTestWallet(), "mainnet-beta");
+    expect(
+      ((await mainnet.call(sessionsRoute.GET, LIST)).json as SessionsBody).sessions[0]?.network,
+    ).toBe("mainnet-beta");
     const result = await second.call(sessionsRoute.GET, LIST);
     expect(result.status).toBe(200);
     expect(result.headers.get("cache-control")).toBe("no-store");
@@ -57,12 +63,76 @@ describe("GET /sessions", () => {
       createdAt: "2026-11-13T10:00:00.000Z",
       lastSeenAt: "2026-11-13T10:00:00.000Z",
       expiresAt: "2026-11-20T10:00:00.000Z",
+      network: "devnet",
       userAgent: null,
     });
   });
 });
 
+describe("GET /sessions omissions", () => {
+  it("omits revoked and idle-expired sessions", async () => {
+    const clock = useTestClock(T0);
+    const wallet = createTestWallet();
+    const old = new TestClient();
+    await signIn(old, wallet);
+    clock.advance(7 * DAY + 1);
+    const revoked = new TestClient();
+    await signIn(revoked, wallet);
+    const live = new TestClient();
+    await signIn(live, wallet);
+    const before = (await live.call(sessionsRoute.GET, LIST)).json as SessionsBody;
+    expect(before.sessions).toHaveLength(2);
+    const target = before.sessions.find((s) => !s.current);
+    if (target === undefined) throw new Error("expected another session");
+    expect((await revoke(live, target.id)).status).toBe(204);
+    const after = (await live.call(sessionsRoute.GET, LIST)).json as SessionsBody;
+    expect(after.sessions).toHaveLength(1);
+    expect(after.sessions[0]?.current).toBe(true);
+  });
+});
+
 describe("DELETE /sessions/:id", () => {
+  it("is idempotent: the second revoke keeps revokedAt and records no second event", async () => {
+    useTestClock(T0);
+    const wallet = createTestWallet();
+    const phone = new TestClient();
+    const { userId } = await signIn(phone, wallet);
+    const laptop = new TestClient();
+    await signIn(laptop, wallet);
+    const { sessions } = (await laptop.call(sessionsRoute.GET, LIST)).json as SessionsBody;
+    const other = sessions.find((s) => !s.current);
+    if (other === undefined) throw new Error("expected a second session");
+    const db = await getDb();
+    const stored = () =>
+      db.collection("sessions").findOne({ tokenHash: sha256Hex(phone.cookie ?? "") });
+    expect((await revoke(laptop, other.id)).status).toBe(204);
+    const first = (await stored())?.revokedAt;
+    expect(first).toBeInstanceOf(Date);
+    useTestClock(new Date(T0.getTime() + HOUR));
+    expect((await revoke(laptop, other.id)).status).toBe(204);
+    expect((await stored())?.revokedAt).toEqual(first);
+    const events = await db
+      .collection("security_events")
+      .find({ type: "session_revoked", reason: "user_revoked" })
+      .toArray();
+    expect(events.filter((e) => String(e.userId) === userId)).toHaveLength(1);
+  });
+
+  it("rejects a foreign Origin with 403 and leaves the session active", async () => {
+    const client = new TestClient();
+    await signIn(client, createTestWallet());
+    const { sessions } = (await client.call(sessionsRoute.GET, LIST)).json as SessionsBody;
+    const id = sessions[0]?.id ?? "";
+    const result = await client.call(revokeRoute.DELETE, {
+      method: "DELETE",
+      path: `/api/v1/sessions/${id}`,
+      params: { id },
+      origin: "https://evil.example",
+    });
+    expect(result.status).toBe(403);
+    expect((await client.call(meRoute.GET, ME)).status).toBe(200);
+  });
+
   it("revokes another own session (204, no cookie change) and that cookie then gets 401", async () => {
     const wallet = createTestWallet();
     const phone = new TestClient();

@@ -67,6 +67,7 @@ export interface SessionView {
   readonly createdAt: string;
   readonly lastSeenAt: string;
   readonly expiresAt: string;
+  readonly network: SolanaNetwork;
   readonly userAgent: string | null;
 }
 

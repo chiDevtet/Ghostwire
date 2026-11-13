@@ -24,6 +24,7 @@ export async function listSessions(auth: AuthContext): Promise<SessionView[]> {
     createdAt: doc.createdAt.toISOString(),
     lastSeenAt: doc.lastSeenAt.toISOString(),
     expiresAt: doc.expiresAt.toISOString(),
+    network: doc.network,
     userAgent: doc.userAgent,
   }));
 }
@@ -41,9 +42,10 @@ export async function revokeSession(sessionId: string, auth: AuthContext): Promi
   const owned = Object.assign({}, safeEquals("_id", id), safeEquals("userId", auth.session.userId));
   const before = await sessions.findOne(owned);
   if (before === null) throw new NotFoundError();
-  const result = await sessions.updateOne(owned, { $set: { revokedAt: auth.at } });
-  if (result.matchedCount === 0) throw new NotFoundError();
-  if (before.revokedAt === null) {
+  const result = await sessions.updateOne(Object.assign({}, owned, { revokedAt: null }), {
+    $set: { revokedAt: auth.at },
+  });
+  if (result.matchedCount === 1) {
     await recordSecurityEvent({
       type: "session_revoked",
       severity: "info",
