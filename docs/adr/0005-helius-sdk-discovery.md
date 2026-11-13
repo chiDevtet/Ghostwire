@@ -202,8 +202,9 @@ documentation alone. They still need the hands-on validation gate in the README 
   change between minor alphas.
 - PR 03 must add `@solana/kit` (peer `^8.3.0`) as a pinned direct dependency and must not add
   `helius-sdk`, whose peer `@solana/kit ^6.9.0` conflicts.
-- The SDK is ESM-only. It imports cleanly in this ESM project, but it cannot be `require`d from
-  any CommonJS tooling.
+- The SDK is ESM-only. Its package format (ESM-only, `import` condition) is compatible with this
+  ESM project; importing it under Next 16 bundling is unverified, since nothing was installed or
+  executed. It cannot be `require`d from any CommonJS tooling.
 - **Architecture risk (blocks PR 03 design):** the docs put the shielded keypair in the user's
   wallet key management. "Local decryption keeps the viewing key on the device", and the derivation
   signature "is the derivation seed". For a self-custodial web app, the private operations

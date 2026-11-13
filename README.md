@@ -4,7 +4,7 @@
 
 GHOST WIRE is a consumer-friendly, self-custodial private payments application for Solana. The initial product focuses on sending and receiving SOL and USDC using Helius Privacy Rings, with an embedded-wallet path and support for existing wallets such as Phantom and Solflare, subject to verified compatibility.
 
-> **Project status:** Product definition and technical planning. This repository is the source of truth for product intent, design direction, architecture decisions, open questions, and implementation guidance. Documented concepts are not necessarily implemented.
+> **Project status:** Foundation built (PR 01: app skeleton, config, database layer, health/readiness routes, module boundaries); no wallet, privacy or payment features yet. This repository is the source of truth for product intent, design direction, architecture decisions, open questions, and implementation guidance. Documented concepts are not necessarily implemented.
 
 ## Start here
 
@@ -34,7 +34,7 @@ GHOST WIRE makes supported private SOL and USDC payments approachable. Users can
 | Visual direction       | Black/graphite, silver, electric violet                                                           |
 | Chain                  | Solana                                                                                            |
 | Initial assets         | SOL and USDC                                                                                      |
-| Wallet experience      | Embedded plus existing-wallet connection                                                          |
+| Wallet experience      | Embedded plus existing-wallet connection (path unverified; see ADR-0005 risks)                    |
 | Privacy infrastructure | Helius Privacy Rings                                                                              |
 | MVP                    | Wallets, private balances, deposits, transfers, withdrawals; then links, QR, history and receipts |
 | Token                  | Not required for MVP; revisit after product usage is validated                                    |

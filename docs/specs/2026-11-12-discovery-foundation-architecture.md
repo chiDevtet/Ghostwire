@@ -739,7 +739,7 @@ Root config files (`*.config.ts`, `eslint.config.mjs`) have no boundary atoms. T
 | Boundary | Inbound failures | What crosses the boundary |
 |---|---|---|
 | env → `config` | Missing or invalid keys | `ConfigError` with key names and reasons, never values. Thrown at boot (`instrumentation.register`) or on first lazy `loadConfig()`. |
-| `database` → MongoDB | Server selection, network, timeout, duplicate key, schema mismatch | `DependencyUnavailableError`, `ConflictError("DUPLICATE_KEY")`, `ValidationError("DOCUMENT_INVALID")` or `InternalError("DATA_INTEGRITY")`. Anything else passes through raw, with the driver error kept as `cause` in every mapped case. |
+| `database` → MongoDB | Server selection, network, timeout, duplicate key, schema mismatch | `DependencyUnavailableError`, `ConflictError("DUPLICATE_KEY")`, `ValidationError("DOCUMENT_INVALID")` or `InternalError("DATA_INTEGRITY")`. Anything else passes through raw. The driver error is kept as `cause` in every mapped case except duplicate key, which gets a sanitized `Error("duplicate key")` cause (see ADR-0003). |
 | module → route | Any thrown value | Route handlers either catch and convert with `toErrorResponse` (the default for future routes), or own a fixed response (`/api/ready`). |
 | route → client | n/a | `{ code, message }` with a stable `code` and a `safeMessage`, and `Cache-Control: no-store`. Never a stack trace, `cause` or driver message. |
 | any → logs | n/a | Everything is logged through `logger`, so redaction always applies. `console.*` is not used in `src/`. Add `no-console: ["error"]` in `src/**` as part of S1–S8. |
@@ -927,7 +927,7 @@ The data-layer contracts defined here are:
 8. **`dynamic = "force-dynamic"` vs `cacheComponents`.** Never enable `cacheComponents` while route segment config is in use.
 9. **Fresh releases skipped (soak rule):** `next`/`eslint-config-next` 16.4.6 (2026-11-09), `mongodb` 7.9.0 (2026-11-12), `vite` 8.3.7 and 8.3.8, `prettier` 3.10.x, `typescript-eslint` 8.72.2 (transitive, resolved by the lockfile). Re-check before implementation. If 16.4.6 is a security release, take it.
 10. **Node 24.0.2 locally.** It satisfies every engines field (Vitest needs `^24.0.0`, `mongodb` needs `>=20.19`). Upgrading to the 24 LTS patch line is recommended.
-11. **Helius (for ADR-0005):** `npm view helius-sdk` reports 3.4.1, `"type": "module"` (ESM-only) and `engines node >=20`. The ESM-only format is compatible with this ESM project. Edge versus Node support still needs to be checked against the docs. This is evidence for the ADR, not an install.
+11. **Helius (for ADR-0005):** `npm view helius-sdk` reports 3.4.1 and `engines node >=20`. (Correction: ADR-0005 found `helius-sdk` is dual ESM/CJS, and that the privacy SDK the docs name is `@heliuslabs/spr`, not `helius-sdk`.) Edge versus Node support still needs to be checked against the docs. This is evidence for the ADR, not an install.
 12. **`docs/TECHNICAL_ARCHITECTURE.md` lists Bun as the runtime.** D6 (Node runtime) supersedes it. ADR-0002 should note the change, and the doc should get a pointer to the ADR.
 
 ---
