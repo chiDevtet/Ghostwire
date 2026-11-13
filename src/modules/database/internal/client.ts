@@ -1,6 +1,7 @@
 import { MongoClient, type Db, type MongoClientOptions } from "mongodb";
 import { loadConfig, type AppConfig } from "@/modules/config";
 import { ConfigError, DependencyUnavailableError, logger } from "@/modules/shared";
+import { clearIndexMemo } from "./index-memo";
 
 /** Every external call is bounded (architecture §5.2). */
 const CLIENT_OPTIONS: MongoClientOptions = {
@@ -77,10 +78,14 @@ export async function getDb(): Promise<Db> {
   return client.db(loadConfig().MONGODB_DB_NAME);
 }
 
-/** Idempotent; never throws (close errors are logged at warn). */
+/**
+ * Idempotent; never throws (close errors are logged at warn). Also clears the
+ * ensureIndexesOnce() memo, because the next client may point at another server.
+ */
 export async function closeDb(): Promise<void> {
   const entry = readEntry();
   writeEntry(undefined);
+  clearIndexMemo();
   if (entry === undefined) return;
   try {
     await entry.mongo.close();

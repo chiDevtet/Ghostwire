@@ -1,7 +1,22 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { register } from "@/instrumentation";
 import { resetConfigForTests } from "@/modules/config";
-import { ConfigError, logger, setLogLevel } from "@/modules/shared";
+import {
+  ConfigError,
+  DependencyUnavailableError,
+  InternalError,
+  logger,
+  setLogLevel,
+} from "@/modules/shared";
+
+// The unit project has no database: ensureIndexesOnce is replaced, everything else is real.
+const { ensureIndexesOnce } = vi.hoisted(() => ({
+  ensureIndexesOnce: vi.fn<() => Promise<void>>(),
+}));
+vi.mock("@/modules/database", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/modules/database")>()),
+  ensureIndexesOnce,
+}));
 
 /** Port 1: nothing listens there, so the unit project can never reach a developer mongod. */
 const VALID = {
@@ -11,6 +26,8 @@ const VALID = {
   LOG_LEVEL: "error",
   APP_ORIGIN: "https://ghostwire.test",
 };
+
+const SERVER = { ...VALID, NEXT_RUNTIME: "nodejs", NEXT_PHASE: "phase-production-server" };
 
 function stubEnv(env: Readonly<Record<string, string>>): void {
   for (const [key, value] of Object.entries(env)) vi.stubEnv(key, value);
@@ -22,6 +39,11 @@ function stubExit() {
     throw new Error(`exit:${code}`);
   }) as never);
 }
+
+beforeEach(() => {
+  ensureIndexesOnce.mockReset();
+  ensureIndexesOnce.mockResolvedValue(undefined);
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -36,6 +58,7 @@ describe("instrumentation register()", () => {
     stubEnv({ NEXT_RUNTIME: "edge", MONGODB_URI: "" });
     await expect(register()).resolves.toBeUndefined();
     expect(exit).not.toHaveBeenCalled();
+    expect(ensureIndexesOnce).not.toHaveBeenCalled();
   });
 
   it("skips config validation during the production build phase", async () => {
@@ -43,17 +66,13 @@ describe("instrumentation register()", () => {
     stubEnv({ NEXT_RUNTIME: "nodejs", NEXT_PHASE: "phase-production-build", MONGODB_URI: "" });
     await expect(register()).resolves.toBeUndefined();
     expect(exit).not.toHaveBeenCalled();
+    expect(ensureIndexesOnce).not.toHaveBeenCalled();
   });
 
   it("logs the invalid keys and exits with code 1 on the Node runtime when config is invalid", async () => {
     const exit = stubExit();
     const error = vi.spyOn(logger, "error").mockImplementation(() => undefined);
-    stubEnv({
-      ...VALID,
-      MONGODB_URI: "",
-      NEXT_RUNTIME: "nodejs",
-      NEXT_PHASE: "phase-production-server",
-    });
+    stubEnv({ ...SERVER, MONGODB_URI: "" });
     await expect(register()).rejects.toThrow("exit:1");
     expect(exit).toHaveBeenCalledWith(1);
     expect(error).toHaveBeenCalledTimes(1);
@@ -63,12 +82,40 @@ describe("instrumentation register()", () => {
     expect(logged).toBeInstanceOf(ConfigError);
     expect((logged as ConfigError).message).toContain("MONGODB_URI");
     expect((logged as ConfigError).message).not.toContain("ghostwire_test");
+    expect(ensureIndexesOnce).not.toHaveBeenCalled();
   });
 
-  it("loads config on the Node runtime when config is valid", async () => {
+  it("loads config and prepares the database on the Node runtime when config is valid", async () => {
     const exit = stubExit();
-    stubEnv({ ...VALID, NEXT_RUNTIME: "nodejs", NEXT_PHASE: "phase-production-server" });
+    stubEnv(SERVER);
     await expect(register()).resolves.toBeUndefined();
     expect(exit).not.toHaveBeenCalled();
+    expect(ensureIndexesOnce).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("instrumentation prepareDatabase()", () => {
+  it("logs at warn and keeps serving when the database is unavailable at boot", async () => {
+    const exit = stubExit();
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    ensureIndexesOnce.mockRejectedValue(new DependencyUnavailableError("database"));
+    stubEnv(SERVER);
+    await expect(register()).resolves.toBeUndefined();
+    expect(exit).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(
+      "database unavailable at boot; index creation deferred to first request",
+      expect.objectContaining({ err: expect.any(DependencyUnavailableError) }),
+    );
+  });
+
+  it("logs at error and exits with code 1 on INDEX_CONFLICT", async () => {
+    const exit = stubExit();
+    const error = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    const conflict = new InternalError({ code: "INDEX_CONFLICT" });
+    ensureIndexesOnce.mockRejectedValue(conflict);
+    stubEnv(SERVER);
+    await expect(register()).rejects.toThrow("exit:1");
+    expect(exit).toHaveBeenCalledWith(1);
+    expect(error).toHaveBeenCalledWith("index preparation failed, exiting", { err: conflict });
   });
 });

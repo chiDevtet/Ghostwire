@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, inject } from "vitest";
+import { afterAll, afterEach, inject } from "vitest";
 import { resetConfigForTests } from "@/modules/config";
 import { closeDb, getDb } from "@/modules/database";
+import { resetClockForTests } from "@/modules/shared";
 
 // @types/next types NODE_ENV as read-only, hence the cast.
 (process.env as Record<string, string | undefined>).NODE_ENV = "test";
@@ -18,6 +19,10 @@ process.env.RATE_LIMIT_CHALLENGE_PER_MIN = "1000";
 process.env.RATE_LIMIT_CHALLENGE_PER_HOUR_ADDRESS = "1000";
 process.env.RATE_LIMIT_VERIFY_PER_MIN = "1000";
 resetConfigForTests();
+
+afterEach(() => {
+  resetClockForTests();
+});
 
 afterAll(async () => {
   try {
