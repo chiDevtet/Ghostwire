@@ -18,8 +18,8 @@
 |---|---|
 | Web | Next.js App Router |
 | Language | TypeScript strict |
-| Runtime/package manager | Bun |
-| Database | MongoDB / existing repository convention |
+| Runtime/package manager | Node 24 runtime; Bun as package manager and script runner ([ADR-0002](adr/0002-bun-tooling-node-runtime.md)) |
+| Database | MongoDB, official driver with Zod schemas ([ADR-0003](adr/0003-mongodb-driver-zod.md)) |
 | Blockchain | Solana |
 | Privacy | Helius Privacy Rings SDK / documented RPC |
 | Wallets | Embedded + Phantom/Solflare where compatible |

@@ -12,5 +12,6 @@
 | [Implementation roadmap](IMPLEMENTATION_ROADMAP.md) | Phased PR sequence and acceptance gates |
 | [Agent guide](AGENT_GUIDE.md) | Instructions for coding agents and contributors |
 | [Open decisions](OPEN_DECISIONS.md) | Validation checklist and unresolved decisions |
+| [Architecture decision records](adr/) | Recorded stack and integration decisions (ADR-0001 onward) |
 
 These documents define intended behavior and constraints. They do not imply implementation is complete or that an integration capability has been verified.

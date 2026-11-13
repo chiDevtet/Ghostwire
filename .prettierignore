@@ -1,0 +1,10 @@
+.next/
+node_modules/
+coverage/
+bun.lock
+next-env.d.ts
+docs/
+AGENTS.md
+agenkit.lock.json
+.agenkit/
+.claude/

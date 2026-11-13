@@ -1,0 +1,24 @@
+.agenkit/memory/codemap.json
+.agenkit/memory/manifest.json
+.claude/worktrees/
+.agenkit/sdd/
+
+# dependencies and build output
+node_modules/
+.next/
+out/
+coverage/
+next-env.d.ts
+*.tsbuildinfo
+
+# local data (README dev replica set uses ./.data/db)
+.data/
+
+# environment (only the example is committed)
+.env
+.env.*
+!.env.example
+
+# misc
+*.log
+.DS_Store
