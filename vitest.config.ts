@@ -18,6 +18,18 @@ export default defineConfig({
         extends: true,
         test: { name: "unit", include: ["tests/unit/**/*.test.ts"], testTimeout: 10_000 },
       },
+      {
+        extends: true,
+        test: {
+          name: "integration",
+          include: ["tests/integration/**/*.test.ts"],
+          globalSetup: ["tests/setup/integration.global.ts"],
+          setupFiles: ["tests/setup/integration.setup.ts"],
+          pool: "forks",
+          testTimeout: 30_000,
+          hookTimeout: 120_000,
+        },
+      },
     ],
   },
 });
