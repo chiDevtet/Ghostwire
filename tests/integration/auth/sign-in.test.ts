@@ -10,6 +10,7 @@ import { getDb, parseObjectId } from "@/modules/database";
 import { sha256Hex } from "@/modules/security";
 import { AuthFailedError, ValidationError } from "@/modules/shared";
 import { buildSignInMessage, parseSignInMessage } from "@/modules/wallet";
+import { useEnv } from "../../helpers/env";
 import { createTestWallet, type TestWallet } from "../../helpers/ed25519";
 
 const T0 = new Date("2026-11-13T10:00:00.000Z");
@@ -231,5 +232,115 @@ describe("verifySignIn", () => {
     const resolution = await resolveSession(tokenOf(result.setCookie), T0);
     expect(resolution?.session.userId.toHexString()).toBe(result.body.user.id);
     expect(resolution?.slid).toBe(false);
+  });
+});
+
+describe("challenge ids", () => {
+  it("are random, not the driver's sequential ObjectIds", async () => {
+    const wallet = createTestWallet();
+    const a = await challengeFor(wallet);
+    const b = await challengeFor(wallet);
+    const counter = (id: string) => Number.parseInt(id.slice(18), 16);
+    expect(a.challengeId).not.toBe(b.challengeId);
+    expect(a.challengeId.slice(8, 18)).not.toBe(b.challengeId.slice(8, 18));
+    expect(counter(b.challengeId) - counter(a.challengeId)).not.toBe(1);
+  });
+});
+
+describe("verifySignIn concurrency and edge branches", () => {
+  async function eventReasons(): Promise<unknown[]> {
+    const events = await (await getDb()).collection("security_events").find({}).toArray();
+    return events.map((e) => e.reason);
+  }
+
+  it("lets exactly one of five concurrent verifies on one challenge succeed", async () => {
+    const wallet = createTestWallet();
+    const view = await challengeFor(wallet);
+    const body = { challengeId: view.challengeId, signature: wallet.sign(view.message) };
+    const results = await Promise.allSettled(
+      Array.from({ length: 5 }, () => verifySignIn(body, meta())),
+    );
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const failures = results.filter((r) => r.status === "rejected");
+    expect(failures).toHaveLength(4);
+    for (const failure of failures) expect(failure.reason).toBeInstanceOf(AuthFailedError);
+    expect(await (await getDb()).collection("sessions").countDocuments({})).toBe(1);
+  });
+
+  it("creates one user and one wallet when two challenges race the first sign-in", async () => {
+    const wallet = createTestWallet();
+    const [one, two] = await Promise.all([challengeFor(wallet), challengeFor(wallet)]);
+    const results = await Promise.all(
+      [one, two].map((view) =>
+        verifySignIn(
+          { challengeId: view.challengeId, signature: wallet.sign(view.message) },
+          meta(),
+        ),
+      ),
+    );
+    expect(results[0]?.body.user.id).toBe(results[1]?.body.user.id);
+    const db = await getDb();
+    expect(await db.collection("users").countDocuments({})).toBe(1);
+    expect(await db.collection("wallets").countDocuments({})).toBe(1);
+    expect(await db.collection("sessions").countDocuments({})).toBe(2);
+  });
+
+  it("reactivates a disconnected wallet for the same user", async () => {
+    const wallet = createTestWallet();
+    const first = await challengeFor(wallet);
+    const one = await verifySignIn(
+      { challengeId: first.challengeId, signature: wallet.sign(first.message) },
+      meta(),
+    );
+    const db = await getDb();
+    await db
+      .collection("wallets")
+      .updateOne({ address: wallet.address }, { $set: { status: "disconnected" } });
+    const second = await challengeFor(wallet);
+    const two = await verifySignIn(
+      { challengeId: second.challengeId, signature: wallet.sign(second.message) },
+      meta(),
+    );
+    expect(two.body.user.id).toBe(one.body.user.id);
+    expect(await db.collection("wallets").findOne({ address: wallet.address })).toMatchObject({
+      status: "active",
+    });
+  });
+
+  it("fails message_integrity when the stored message was tampered with", async () => {
+    const wallet = createTestWallet();
+    const view = await challengeFor(wallet);
+    await (
+      await getDb()
+    )
+      .collection("auth_challenges")
+      .updateOne(
+        { _id: parseObjectId(view.challengeId) ?? undefined },
+        { $set: { message: `${view.message}x` } },
+      );
+    const error = await errorOf(
+      verifySignIn({ challengeId: view.challengeId, signature: wallet.sign(view.message) }, meta()),
+    );
+    expect(error).toBeInstanceOf(AuthFailedError);
+    expect((error as AuthFailedError).reason).toBe("message_integrity");
+    expect(await eventReasons()).toEqual(["message_integrity"]);
+  });
+
+  it("fails network_unsupported when the network was removed from config after issue", async () => {
+    const wallet = createTestWallet();
+    const view = await challengeFor(wallet, "mainnet-beta");
+    const restore = useEnv({ SOLANA_NETWORKS: "devnet" });
+    try {
+      const error = await errorOf(
+        verifySignIn(
+          { challengeId: view.challengeId, signature: wallet.sign(view.message) },
+          meta(),
+        ),
+      );
+      expect((error as AuthFailedError).reason).toBe("network_unsupported");
+    } finally {
+      restore();
+    }
+    expect(await eventReasons()).toEqual(["network_unsupported"]);
   });
 });

@@ -33,7 +33,10 @@ export interface TypedUpdate<S extends z.ZodObject> {
 export interface TypedCollection<S extends z.ZodObject> {
   readonly name: string;
   /** @throws ValidationError("DOCUMENT_INVALID"), ConflictError("DUPLICATE_KEY"), DependencyUnavailableError */
-  insertOne(doc: z.input<S>, options?: { session?: ClientSession }): Promise<WithId<z.output<S>>>;
+  insertOne(
+    doc: z.input<S>,
+    options?: { session?: ClientSession; id?: ObjectId },
+  ): Promise<WithId<z.output<S>>>;
   /** @throws InternalError("DATA_INTEGRITY") if a stored doc fails the schema; DependencyUnavailableError */
   findOne(
     filter: Filter<z.output<S>>,
@@ -169,9 +172,10 @@ export function typedCollection<S extends z.ZodObject>(
       const data = asRecord(parsed.data);
       try {
         // Copy: the driver mutates the inserted object to add _id.
+        const toInsert = options.id === undefined ? { ...data } : { _id: options.id, ...data };
         const { insertedId } = await (
           await collection()
-        ).insertOne({ ...data }, { session: options.session });
+        ).insertOne(toInsert, { session: options.session });
         return { _id: insertedId, ...data } as unknown as Stored;
       } catch (error) {
         throw mapMongoError(error);

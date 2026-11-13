@@ -1,5 +1,5 @@
 import { loadConfig } from "@/modules/config";
-import { safeEquals, type ObjectId } from "@/modules/database";
+import { randomObjectId, safeEquals, type ObjectId } from "@/modules/database";
 import { randomToken, sha256Hex } from "@/modules/security";
 import { ConflictError, InternalError, logger } from "@/modules/shared";
 import {
@@ -49,17 +49,20 @@ export async function insertChallenge(input: {
       expiresAt,
     });
     try {
-      const doc = await challenges.insertOne({
-        nonceHash: sha256Hex(nonce),
-        message,
-        address: input.address,
-        network: input.network,
-        purpose: input.purpose,
-        userId: input.userId,
-        createdAt: input.at,
-        expiresAt,
-        consumedAt: null,
-      });
+      const doc = await challenges.insertOne(
+        {
+          nonceHash: sha256Hex(nonce),
+          message,
+          address: input.address,
+          network: input.network,
+          purpose: input.purpose,
+          userId: input.userId,
+          createdAt: input.at,
+          expiresAt,
+          consumedAt: null,
+        },
+        { id: randomObjectId() },
+      );
       return {
         challengeId: doc._id.toHexString(),
         message,

@@ -14,4 +14,4 @@ export { QUERY_MAX_TIME_MS, typedCollection } from "./internal/typed-collection"
 export type { TypedCollection, TypedUpdate } from "./internal/typed-collection";
 export { safeEquals } from "./internal/safe-filter";
 export type { SafeScalar } from "./internal/safe-filter";
-export { objectIdSchema, parseObjectId } from "./internal/ids";
+export { objectIdSchema, parseObjectId, randomObjectId } from "./internal/ids";
