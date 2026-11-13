@@ -28,6 +28,7 @@ export const SECURITY_REASONS = [
   "logout",
   "user_revoked",
   "wallet_unlinked",
+  "replaced",
 ] as const;
 export type SecurityReason = (typeof SECURITY_REASONS)[number];
 

@@ -1,6 +1,7 @@
 import { loadConfig } from "@/modules/config";
 import { safeEquals, type ClientSession, type ObjectId } from "@/modules/database";
 import { recordSecurityEvent, sha256Hex } from "@/modules/security";
+import { isAppError, logger } from "@/modules/shared";
 import type { SolanaNetwork } from "@/modules/wallet";
 import { sessions, users, type SessionDoc } from "./collections";
 import { ensureAuthReady } from "./indexes";
@@ -120,6 +121,38 @@ export async function logout(auth: AuthContext): Promise<void> {
       walletId: auth.session.walletId,
       reason: "logout",
       at: auth.at,
+    });
+  }
+}
+
+/**
+ * Best effort, never rejects: revokes the still-active session behind `token` (any user) with
+ * reason "replaced". Used by sign-in after the new session has committed. The atomic
+ * revokedAt: null filter is the same mechanism logout uses. A failure logs a code only (never
+ * err, so a driver error cannot leak a filter's token hash).
+ */
+export async function replaceSession(token: string | null, at: Date): Promise<void> {
+  if (token === null) return;
+  try {
+    const previous = await resolveSession(token, at, { slide: false });
+    if (previous === null) return;
+    const result = await sessions.updateOne(
+      Object.assign({}, safeEquals("_id", previous.session.id), { revokedAt: null }),
+      { $set: { revokedAt: at } },
+    );
+    if (result.modifiedCount === 1) {
+      await recordSecurityEvent({
+        type: "session_revoked",
+        severity: "info",
+        userId: previous.session.userId,
+        walletId: previous.session.walletId,
+        reason: "replaced",
+        at,
+      });
+    }
+  } catch (error) {
+    logger.warn("previous session revoke failed", {
+      code: isAppError(error) ? error.code : "UNKNOWN",
     });
   }
 }

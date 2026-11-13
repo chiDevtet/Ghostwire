@@ -24,7 +24,7 @@ import { authFailed } from "./errors";
 import { strictlyAfter } from "./guard";
 import { ensureAuthReady } from "./indexes";
 import { parseChallengeBody, parseVerifyBody } from "./request";
-import { createSession } from "./sessions";
+import { createSession, replaceSession } from "./sessions";
 import type { ChallengeView, RequestMeta, SignInResult } from "./types";
 
 const SESSION_TOKEN_BYTES = 32;
@@ -144,9 +144,15 @@ async function writeSignIn(input: SignInWrite): Promise<{ userId: ObjectId; wall
 /**
  * POST /auth/verify. Consumption happens outside the transaction, so a bad signature still
  * burns the challenge. Every AuthFailedError records signin_failed with its static reason.
+ * After the new session commits, the request's previous session (options.previousToken, any
+ * user) is revoked best-effort with reason "replaced"; a failure there never fails sign-in.
  * @throws ValidationError, AuthFailedError, RateLimitedError, DependencyUnavailableError
  */
-export async function verifySignIn(body: unknown, meta: RequestMeta): Promise<SignInResult> {
+export async function verifySignIn(
+  body: unknown,
+  meta: RequestMeta,
+  options: { readonly previousToken?: string | null } = {},
+): Promise<SignInResult> {
   await ensureAuthReady();
   const config = loadConfig();
   await rateLimit(`signin_verify:ip:${meta.ip}`, config.RATE_LIMIT_VERIFY_PER_MIN, MINUTE, meta.at);
@@ -176,6 +182,7 @@ export async function verifySignIn(body: unknown, meta: RequestMeta): Promise<Si
       reason: null,
       at: meta.at,
     });
+    await replaceSession(options.previousToken ?? null, meta.at);
     return {
       body: {
         user: { id: userId.toHexString() },
