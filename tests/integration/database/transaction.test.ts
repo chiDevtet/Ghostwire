@@ -75,6 +75,7 @@ describe("withTransaction", () => {
     expect(calls).toBe(3);
     expect(error).toBeInstanceOf(DependencyUnavailableError);
     expect((error as DependencyUnavailableError).cause).toBe(transient);
+    expect((error as DependencyUnavailableError).safeMessage).toBe("Service temporarily unavailable");
   });
 
   it("honours maxAttempts", async () => {
@@ -142,6 +143,61 @@ describe("withTransaction", () => {
     });
     expect(calls).toBe(2);
     expect(await coll.countDocuments({ ref: "d" })).toBe(1);
+  });
+
+  it("bounds commit retries on UnknownTransactionCommitResult by maxAttempts", async () => {
+    const coll = await probe();
+    const unknown = labelled(UNKNOWN_COMMIT);
+    const commit = vi.spyOn(ClientSession.prototype, "commitTransaction").mockImplementation(async () => {
+      throw unknown;
+    });
+    let calls = 0;
+    const error: unknown = await withTransaction(
+      async (session) => {
+        calls += 1;
+        await coll.insertOne({ ref: "e" }, { session });
+      },
+      { maxAttempts: 3 },
+    ).catch((e: unknown) => e);
+    expect(commit).toHaveBeenCalledTimes(3);
+    expect(calls).toBe(1);
+    expect(error).toBeInstanceOf(DependencyUnavailableError);
+    expect((error as DependencyUnavailableError).cause).toBe(unknown);
+  });
+
+  it("bounds fn re-runs when commit keeps failing with TransientTransactionError", async () => {
+    const coll = await probe();
+    vi.spyOn(ClientSession.prototype, "commitTransaction").mockImplementation(async () => {
+      throw labelled(TRANSIENT);
+    });
+    let calls = 0;
+    const outcome = withTransaction(
+      async (session) => {
+        calls += 1;
+        await coll.insertOne({ ref: "f" }, { session });
+      },
+      { maxAttempts: 2 },
+    );
+    await expect(outcome).rejects.toBeInstanceOf(DependencyUnavailableError);
+    expect(calls).toBe(2);
+    expect(await coll.countDocuments({})).toBe(0);
+  });
+
+  it("rethrows an unlabelled commit error unchanged without retrying", async () => {
+    const coll = await probe();
+    const unlabelled = new MongoError("commit failed");
+    const commit = vi.spyOn(ClientSession.prototype, "commitTransaction").mockImplementationOnce(async () => {
+      throw unlabelled;
+    });
+    let calls = 0;
+    const outcome = withTransaction(async (session) => {
+      calls += 1;
+      await coll.insertOne({ ref: "g" }, { session });
+    });
+    await expect(outcome).rejects.toBe(unlabelled);
+    expect(calls).toBe(1);
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(await coll.countDocuments({})).toBe(0);
   });
 
   it("rejects an invalid maxAttempts with RangeError before running fn", async () => {
