@@ -36,8 +36,30 @@ function postVerify(client: TestClient, body: unknown) {
 }
 
 describe("400 VALIDATION_FAILED", () => {
+  describe("body size cap", () => {
+    // A schema-valid challenge body padded with JSON whitespace: only its size can reject it.
+    function padded(bytes: number): string {
+      const core = JSON.stringify({ address: createTestWallet().address, network: "devnet" });
+      return core + " ".repeat(bytes - Buffer.byteLength(core));
+    }
+
+    it("accepts a valid body of exactly 4096 bytes (control)", async () => {
+      const rawBody = padded(4096);
+      expect(Buffer.byteLength(rawBody)).toBe(4096);
+      const result = await postChallenge(new TestClient(), { rawBody });
+      expect(result.status).toBe(200);
+    });
+
+    it("rejects the same valid body at 4097 bytes", async () => {
+      const rawBody = padded(4097);
+      expect(Buffer.byteLength(rawBody)).toBe(4097);
+      const result = await postChallenge(new TestClient(), { rawBody });
+      expect(result.status).toBe(400);
+      expect(result.json).toEqual(VALIDATION_FAILED);
+    });
+  });
+
   it.each([
-    { label: "a 4097-byte body", rawBody: `"${"a".repeat(4095)}"` },
     { label: "a non-JSON body", rawBody: "{not json" },
     { label: "an empty body", rawBody: "" },
   ])("rejects $label", async ({ rawBody }) => {

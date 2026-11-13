@@ -37,13 +37,19 @@ describe("logs never contain credentials", () => {
         sha256Hex(nonce),
         signedIn.signature,
         signedIn.challenge.message,
+        JSON.stringify(signedIn.challenge.message).slice(1, -1),
       );
 
       // Failure paths: replay, foreign signature, tampered message, expired challenge.
       await verify(new TestClient(), signedIn.challenge, signedIn.signature);
       const second = await requestChallenge(new TestClient(), wallet);
       const forged = createTestWallet().sign(second.message);
-      secrets.push(forged, second.message, parseSignInMessage(second.message)?.nonce ?? "");
+      secrets.push(
+        forged,
+        second.message,
+        JSON.stringify(second.message).slice(1, -1),
+        parseSignInMessage(second.message)?.nonce ?? "",
+      );
       await verify(new TestClient(), second, forged);
       const third = await requestChallenge(new TestClient(), wallet);
       const tampered = wallet.sign(third.message.replace("solana:devnet", "solana:mainnet-beta"));
@@ -55,21 +61,44 @@ describe("logs never contain credentials", () => {
       secrets.push(late);
       await verify(new TestClient(), fourth, late);
 
-      // Session paths: slide, list, a 409, a forged cookie, logout.
+      // Session paths: slide, list, link, an unlink that succeeds, a real LAST_WALLET 409, a
+      // forged cookie, and logout (the main client's, plus a separate client that logs out OK).
       clock.advance(2 * 3_600_000);
       await client.call(meRoute.GET, { method: "GET", path: "/api/v1/me" });
       await client.call(sessionsRoute.GET, { method: "GET", path: "/api/v1/sessions" });
-      await linkWallet(client, createTestWallet());
-      await client.call(unlinkRoute.DELETE, {
-        method: "DELETE",
-        path: `/api/v1/wallets/${signedIn.walletId}`,
-        params: { id: signedIn.walletId },
-      });
+      const linked = await linkWallet(client, createTestWallet());
+      const linkedId = (linked.json as { wallet: { id: string } }).wallet.id;
+      const unlink = (id: string) =>
+        client.call(unlinkRoute.DELETE, {
+          method: "DELETE",
+          path: `/api/v1/wallets/${id}`,
+          params: { id },
+        });
+      expect((await unlink(linkedId)).status).toBe(204);
+      const lastWallet = await unlink(signedIn.walletId);
+      expect(lastWallet.status).toBe(409);
+      expect(lastWallet.json).toMatchObject({ code: "LAST_WALLET" });
       const forgedCookie = "F".repeat(43);
       secrets.push(forgedCookie);
       const stranger = new TestClient();
       stranger.setCookie(forgedCookie);
       await stranger.call(meRoute.GET, { method: "GET", path: "/api/v1/me" });
+      const other = new TestClient();
+      const otherSignedIn = await signIn(other, createTestWallet());
+      const otherToken = other.cookie ?? "";
+      secrets.push(
+        otherToken,
+        sha256Hex(otherToken),
+        otherSignedIn.signature,
+        otherSignedIn.challenge.message,
+        JSON.stringify(otherSignedIn.challenge.message).slice(1, -1),
+        parseSignInMessage(otherSignedIn.challenge.message)?.nonce ?? "",
+      );
+      const loggedOut = await other.call(logoutRoute.POST, {
+        method: "POST",
+        path: "/api/v1/auth/logout",
+      });
+      expect(loggedOut.status).toBe(204);
       await client.call(logoutRoute.POST, { method: "POST", path: "/api/v1/auth/logout" });
     } finally {
       capture.restore();

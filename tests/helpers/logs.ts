@@ -1,6 +1,6 @@
 import { vi } from "vitest";
 import { resetConfigForTests } from "@/modules/config";
-import { setLogLevel } from "@/modules/shared";
+import { LOG_LEVELS, setLogLevel, type LogLevel } from "@/modules/shared";
 
 export interface CapturedLogs {
   /** Every captured line, one JSON log line per entry. */
@@ -15,6 +15,7 @@ export interface CapturedLogs {
 export function captureLogLines(): CapturedLogs {
   const env = process.env as Record<string, string | undefined>;
   const previousLevel = env.LOG_LEVEL;
+  const previousLogLevel: LogLevel = LOG_LEVELS.find((level) => level === previousLevel) ?? "error";
   env.LOG_LEVEL = "debug";
   resetConfigForTests();
   setLogLevel("debug");
@@ -37,7 +38,7 @@ export function captureLogLines(): CapturedLogs {
       if (previousLevel === undefined) delete env.LOG_LEVEL;
       else env.LOG_LEVEL = previousLevel;
       resetConfigForTests();
-      setLogLevel("error");
+      setLogLevel(previousLogLevel);
     },
   };
 }
