@@ -42,6 +42,7 @@ const MESSAGES = {
   serverClient:
     "Server modules must not import '@/modules/wallet-connect', '@/ui/*' or '@/components/*'.",
   nextServer: "Only src/app/** may import next/headers or the server functions of next/navigation.",
+  wcUi: "src/modules/wallet-connect/** must not import '@/ui/*' or '@/components/*'.",
   uiLayer: "src/ui/** must not import '@/modules/wallet-connect' or '@/components/*'.",
   bs58: "Only wallet/internal/base58.ts and wallet-connect/internal/base58.ts may import 'bs58'.",
 };
@@ -143,6 +144,12 @@ const R5_UI_LAYER = {
   patterns: [{ regex: UI_LAYER_RE, message: MESSAGES.uiLayer }],
   syntax: dynamicSelectors(UI_LAYER_RE, MESSAGES.uiLayer),
 };
+/** R5e: wallet-connect never reaches ui or components. */
+const WC_UI_RE = "^@/(ui|components)(/|$)";
+const R5_WC_UI = {
+  patterns: [{ regex: WC_UI_RE, message: MESSAGES.wcUi }],
+  syntax: dynamicSelectors(WC_UI_RE, MESSAGES.wcUi),
+};
 /** R6: bs58 is contained in the two base58.ts files. */
 const R6_BS58 = {
   patterns: [{ regex: BS58_RE, message: MESSAGES.bs58 }],
@@ -189,18 +196,25 @@ const SERVER = [R5_SERVER_CLIENT, R5_NEXT_SERVER, R6_BS58];
 const CLIENT = [R5_CLIENT_SERVER, R5_CLIENT_NODE, R5_NEXT_SERVER, R6_BS58];
 
 const boundaryScopes = [
-  // S1 app + other root src files (instrumentation and proxy have their own scope)
+  // S1 app
   scope(
-    ["src/app/**/*.{ts,tsx}", "src/*.{ts,tsx}"],
-    ["src/instrumentation.ts", "src/proxy.ts"],
+    ["src/app/**/*.{ts,tsx}"],
+    [],
     [R1_DEEP, R1_REL_INTO_MODULES, R3_MONGODB, R4_ENV, R6_BS58],
+    SRC,
+  ),
+  // S1b other root src files (instrumentation and proxy have their own scope)
+  scope(
+    ["src/*.{ts,tsx}"],
+    ["src/instrumentation.ts", "src/proxy.ts"],
+    [R1_DEEP, R1_REL_INTO_MODULES, R3_MONGODB, R4_ENV, R5_NEXT_SERVER, R6_BS58],
     SRC,
   ),
   // S2 Next runtime files: process.env allowed
   scope(
     ["src/instrumentation.ts", "src/proxy.ts"],
     [],
-    [R1_DEEP, R1_REL_INTO_MODULES, R3_MONGODB, R6_BS58],
+    [R1_DEEP, R1_REL_INTO_MODULES, R3_MONGODB, R5_NEXT_SERVER, R6_BS58],
     SRC,
   ),
   // S0 catch-all for any other src file (src/lib, ...): base rules
@@ -301,13 +315,13 @@ const boundaryScopes = [
   scope(
     [`${WC}/*.{ts,tsx}`],
     [],
-    [R1_DEEP, R1_ESCAPE_1, R2_APP, R3_MONGODB, R4_ENV, R5_UI_LAYER, ...CLIENT],
+    [R1_DEEP, R1_ESCAPE_1, R2_APP, R3_MONGODB, R4_ENV, R5_WC_UI, ...CLIENT],
     SRC,
   ),
   scope(
     [`${WC}/internal/*.{ts,tsx}`],
     [`${WC}/internal/base58.ts`],
-    [R1_DEEP, R1_ESCAPE_2, R2_APP, R3_MONGODB, R4_ENV, R5_UI_LAYER, ...CLIENT],
+    [R1_DEEP, R1_ESCAPE_2, R2_APP, R3_MONGODB, R4_ENV, R5_WC_UI, ...CLIENT],
     SRC,
   ),
   // S14a wallet-connect/internal/base58.ts: S14 minus R6
@@ -320,7 +334,7 @@ const boundaryScopes = [
       R2_APP,
       R3_MONGODB,
       R4_ENV,
-      R5_UI_LAYER,
+      R5_WC_UI,
       R5_CLIENT_SERVER,
       R5_CLIENT_NODE,
       R5_NEXT_SERVER,
@@ -337,7 +351,7 @@ const boundaryScopes = [
       R2_APP,
       R3_MONGODB,
       R4_ENV,
-      R5_UI_LAYER,
+      R5_WC_UI,
       ...CLIENT,
     ],
     SRC,
@@ -345,7 +359,7 @@ const boundaryScopes = [
   scope(
     [`${WC}/**/*.{ts,tsx}`],
     MODULE_SCOPED_FILES,
-    [R1_DEEP, R1_REL_INTO_MODULES, R1_ESCAPE_2, R2_APP, R3_MONGODB, R4_ENV, R5_UI_LAYER, ...CLIENT],
+    [R1_DEEP, R1_REL_INTO_MODULES, R1_ESCAPE_2, R2_APP, R3_MONGODB, R4_ENV, R5_WC_UI, ...CLIENT],
     SRC,
   ),
   // S17 ui primitives: client, and the bottom layer

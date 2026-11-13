@@ -27,6 +27,7 @@ const MSG = {
   serverClient:
     "Server modules must not import '@/modules/wallet-connect', '@/ui/*' or '@/components/*'.",
   nextServer: "Only src/app/** may import next/headers or the server functions of next/navigation.",
+  wcUi: "src/modules/wallet-connect/** must not import '@/ui/*' or '@/components/*'.",
   uiLayer: "src/ui/** must not import '@/modules/wallet-connect' or '@/components/*'.",
   bs58: "Only wallet/internal/base58.ts and wallet-connect/internal/base58.ts may import 'bs58'.",
 };
@@ -352,6 +353,31 @@ describe("module boundary lint rules", { timeout: 60_000 }, () => {
     },
     { fixture: "env-outside-config.ts", virtualPath: "src/proxy.ts", expected: [] },
     { fixture: "env-outside-config.ts", virtualPath: "tests/e2e/__lint__.spec.ts", expected: [] },
+    // --- fix round 1: wallet-connect never imports ui/components; root files get next server rule ---
+    ...[
+      "src/modules/wallet-connect/__lint__.ts",
+      "src/modules/wallet-connect/internal/__lint__.ts",
+      "src/modules/wallet-connect/internal/base58.ts",
+    ].map((virtualPath) => ({
+      fixture: "wallet-connect-imports-ui.ts",
+      virtualPath,
+      expected: [
+        [1, IMPORTS, MSG.wcUi],
+        [2, IMPORTS, MSG.wcUi],
+        [3, SYNTAX, MSG.wcUi],
+      ] satisfies Expected[],
+    })),
+    ...["src/instrumentation-node.ts", "src/instrumentation.ts", "src/proxy.ts"].map(
+      (virtualPath) => ({
+        fixture: "next-server-imports.ts",
+        virtualPath,
+        expected: [
+          [1, IMPORTS, MSG.nextServer],
+          [2, IMPORTS, MSG.nextServer],
+          [3, SYNTAX, MSG.nextServer],
+        ] satisfies Expected[],
+      }),
+    ),
   ])("$fixture linted as $virtualPath", async ({ fixture, virtualPath, expected }) => {
     const messages = await boundaryMessages(fixture, virtualPath);
 
