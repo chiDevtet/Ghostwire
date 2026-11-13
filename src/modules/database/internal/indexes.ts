@@ -2,6 +2,7 @@ import { MongoServerError, type IndexDescription } from "mongodb";
 import { InternalError } from "@/modules/shared";
 import { getDb } from "./client";
 import { mapMongoError } from "./errors";
+import { clearIndexMemo, readIndexMemo, writeIndexMemo } from "./index-memo";
 import { assertCollectionName } from "./names";
 
 export type IndexDirection = 1 | -1;
@@ -57,6 +58,7 @@ function fingerprint(spec: IndexSpec): string {
 
 /**
  * All-or-nothing per call. Re-registering an identical spec is a no-op (safe under HMR).
+ * Registering a spec name that was not registered before clears the ensureIndexesOnce() memo.
  * @throws InternalError INDEX_REGISTRY_CONFLICT | INDEX_SPEC_INVALID | COLLECTION_NAME_INVALID
  */
 export function registerIndexes(collection: string, specs: readonly IndexSpec[]): void {
@@ -75,8 +77,13 @@ export function registerIndexes(collection: string, specs: readonly IndexSpec[])
     pending.set(spec.name, Object.freeze({ ...spec, key: Object.freeze({ ...spec.key }) }));
   }
   if (pending.size === 0) return;
-  for (const [name, spec] of pending) current.set(name, spec);
+  let added = false;
+  for (const [name, spec] of pending) {
+    if (!current.has(name)) added = true;
+    current.set(name, spec);
+  }
   registry.set(collection, current);
+  if (added) clearIndexMemo();
 }
 
 function toIndexDescription(spec: IndexSpec): IndexDescription {
@@ -96,7 +103,7 @@ function toIndexDescription(spec: IndexSpec): IndexDescription {
 
 /**
  * Creates every registered index. Names are explicit, so a second run is a server no-op.
- * Not called by application code in this PR. The first PR that adds a collection picks the call site.
+ * Application code calls ensureIndexesOnce() instead (boot hook and the auth request gate).
  * @throws InternalError("INDEX_CONFLICT") on server codes 85/86; DependencyUnavailableError on connectivity
  */
 export async function ensureIndexes(): Promise<void> {
@@ -118,6 +125,24 @@ export async function ensureIndexes(): Promise<void> {
   }
 }
 
+/**
+ * Memoized ensureIndexes(). Concurrent callers share one run. A rejection clears the memo so the
+ * next call retries. The memo is also cleared by closeDb(), resetIndexRegistryForTests() and
+ * whenever registerIndexes() adds a spec name that was not registered before.
+ * @throws same as ensureIndexes()
+ */
+export function ensureIndexesOnce(): Promise<void> {
+  const existing = readIndexMemo();
+  if (existing !== undefined) return existing;
+  const run = ensureIndexes();
+  writeIndexMemo(run);
+  run.catch(() => {
+    if (readIndexMemo() === run) clearIndexMemo();
+  });
+  return run;
+}
+
 export function resetIndexRegistryForTests(): void {
   registry.clear();
+  clearIndexMemo();
 }

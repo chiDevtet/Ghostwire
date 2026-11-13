@@ -166,7 +166,9 @@ const boundaryScopes = [
     [R1_DEEP, R1_ESCAPE_2, R2_APP, R3_MONGODB],
     SRC,
   ),
-  // S7/S8 every other module
+  // S7/S8 every other module. These globs already cover auth, wallet and security (and every
+  // future module), so no per-module scope is added: a second scope for the same files would
+  // REPLACE these rules (see PITFALL above), not add to them.
   scope(
     ["src/modules/*/*.{ts,tsx}"],
     NOT_DB_OR_CONFIG,

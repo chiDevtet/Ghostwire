@@ -22,8 +22,8 @@ Record exact docs, SDK version, test date, wallet/provider, cluster, safe transa
 
 ## 2. Product behavior decisions
 
-- [ ] Authentication provider and whether email is required.
-- [ ] Multiple wallets per account?
+- [x] Authentication provider and whether email is required. Resolved 2026-11-13: self-hosted wallet-signature auth (SIWS-layout message verified with `node:crypto` Ed25519, opaque hashed server-side sessions); no email and no third-party auth vendor ([ADR-0006](adr/0006-wallet-signature-auth.md)). Evidence: `tests/integration/routes/v1/happy-path.test.ts`, `tests/integration/routes/v1/sign-in-failures.test.ts`, `tests/unit/wallet/ed25519.test.ts` (RFC 8032 §7.1 vectors).
+- [x] Multiple wallets per account? Resolved 2026-11-13: yes. One account, many wallets; `(address, network)` belongs to exactly one account (unique index `wallets_address_network_unique`); any linked wallet signs in to the same account; the last active wallet cannot be unlinked ([ADR-0006](adr/0006-wallet-signature-auth.md)). Evidence: `tests/integration/routes/v1/wallets.test.ts`, `tests/integration/auth/unlink-race.test.ts`.
 - [ ] Is embedded wallet recommended after provider validation?
 - [ ] Canonical first-time recipient onboarding?
 - [ ] V1 assets limited to SOL/USDC? (Current plan: yes.)
@@ -41,7 +41,7 @@ Record exact docs, SDK version, test date, wallet/provider, cluster, safe transa
 - [x] Inspect repository before locking package architecture. Resolved 2026-11-12: documentation-only repository; single Next.js app with internal module boundaries ([ADR-0001](adr/0001-single-app-module-boundaries.md)).
 - [ ] Confirm Next.js/Bun/TypeScript compatibility with Helius SDK and wallet adapters. Partially answered ([ADR-0005](adr/0005-helius-sdk-discovery.md)): SDK is ESM-only with Node `^22.12.0 || >=24` and no pin conflict; browser/edge and Bun installs undocumented; wallet adapters not yet evaluated.
 - [x] Confirm MongoDB conventions and whether Mongoose is used. Resolved 2026-11-12: no prior convention and no Mongoose; official driver with Zod schemas ([ADR-0003](adr/0003-mongodb-driver-zod.md)).
-- [ ] Select auth/session provider.
+- [x] Select auth/session provider. Resolved 2026-11-13: self-hosted; sessions are 32-byte random tokens stored only as SHA-256 hashes, with idle and absolute expiry and per-session revocation ([ADR-0006](adr/0006-wallet-signature-auth.md)). Evidence: `tests/integration/routes/v1/sessions.test.ts`, `tests/integration/routes/v1/persistence.test.ts`.
 - [ ] Select KMS/secret manager for application encryption.
 - [ ] Select hosting/environment model.
 - [ ] Select monitoring/alerting.

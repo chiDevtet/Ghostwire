@@ -1,12 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  AppError,
   ConfigError,
   ConflictError,
   DependencyUnavailableError,
   InternalError,
   NotFoundError,
+  RateLimitedError,
   ValidationError,
   logger,
+  noContent,
   noStoreJson,
   toErrorResponse,
 } from "@/modules/shared";
@@ -31,6 +34,29 @@ describe("noStoreJson", () => {
     expect(res.headers.get("retry-after")).toBe("5");
     expect(res.headers.get("cache-control")).toBe("no-store");
   });
+
+  it("serializes bigint values as decimal strings, nested or top level (entry gate 6)", async () => {
+    const res = noStoreJson({ amount: 18446744073709551616n, nested: { list: [1n, 2] } });
+    expect(await res.text()).toBe('{"amount":"18446744073709551616","nested":{"list":["1",2]}}');
+    expect(await noStoreJson(5n).text()).toBe('"5"');
+  });
+});
+
+describe("noContent", () => {
+  it("returns 204 with no body and no-store", async () => {
+    const res = noContent();
+    expect(res.status).toBe(204);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(await res.text()).toBe("");
+  });
+
+  it("applies extra headers, including Set-Cookie, but never drops no-store", () => {
+    const res = noContent({
+      headers: { "Set-Cookie": "a=; Max-Age=0", "Cache-Control": "public" },
+    });
+    expect(res.headers.getSetCookie()).toEqual(["a=; Max-Age=0"]);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+  });
 });
 
 function silenceLoggerError() {
@@ -44,40 +70,46 @@ describe("toErrorResponse", () => {
       status: 400,
       code: "VALIDATION_FAILED",
       message: "Invalid request",
+      logged: "VALIDATION_FAILED",
     },
     {
       error: new NotFoundError({ message: SENTINEL }),
       status: 404,
       code: "NOT_FOUND",
       message: "Not found",
+      logged: "NOT_FOUND",
     },
     {
       error: new ConflictError({ message: SENTINEL }),
       status: 409,
       code: "CONFLICT",
       message: "Conflict",
+      logged: "CONFLICT",
     },
     {
       error: new DependencyUnavailableError("database", { message: SENTINEL }),
       status: 503,
       code: "DEPENDENCY_UNAVAILABLE",
       message: "Service temporarily unavailable",
+      logged: "DEPENDENCY_UNAVAILABLE",
     },
     {
       error: new InternalError({ message: SENTINEL }),
       status: 500,
       code: "INTERNAL",
       message: "Internal error",
+      logged: "INTERNAL",
     },
     {
       error: new ConfigError([{ key: SENTINEL, reason: "Required" }]),
       status: 500,
-      code: "CONFIG_INVALID",
+      code: "INTERNAL",
       message: "Internal error",
+      logged: "CONFIG_INVALID",
     },
   ])(
-    "maps $code to $status with only the safe message",
-    async ({ error, status, code, message }) => {
+    "maps $logged to $status $code with only the safe message",
+    async ({ error, status, code, message, logged }) => {
       const logError = silenceLoggerError();
       const res = toErrorResponse(error);
       expect(res.status).toBe(status);
@@ -86,9 +118,39 @@ describe("toErrorResponse", () => {
       expect(JSON.parse(text)).toEqual({ code, message });
       expect(text).not.toContain(SENTINEL);
       expect(text).not.toContain("stack");
-      expect(logError).toHaveBeenCalledWith("request failed", { err: error });
+      expect(logError).toHaveBeenCalledWith("request failed", { err: error, code: logged });
     },
   );
+
+  it.each([
+    { label: "DATA_INTEGRITY", error: new InternalError({ code: "DATA_INTEGRITY" }) },
+    { label: "INDEX_CONFLICT", error: new InternalError({ code: "INDEX_CONFLICT" }) },
+    {
+      label: "a custom 502",
+      error: new AppError({ code: "UPSTREAM_BROKEN", httpStatus: 502, safeMessage: "Bad gateway" }),
+    },
+  ])(
+    "collapses $label to 500 INTERNAL and logs the original code (entry gate 5)",
+    async ({ error }) => {
+      const logError = silenceLoggerError();
+      const res = toErrorResponse(error);
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ code: "INTERNAL", message: "Internal error" });
+      expect(res.headers.get("retry-after")).toBeNull();
+      expect(logError).toHaveBeenCalledWith("request failed", { err: error, code: error.code });
+    },
+  );
+
+  it("keeps DEPENDENCY_UNAVAILABLE as a 503 with Retry-After (not collapsed)", async () => {
+    silenceLoggerError();
+    const res = toErrorResponse(new DependencyUnavailableError("database"));
+    expect(res.status).toBe(503);
+    expect(res.headers.get("retry-after")).toBe("5");
+    expect(await res.json()).toEqual({
+      code: "DEPENDENCY_UNAVAILABLE",
+      message: "Service temporarily unavailable",
+    });
+  });
 
   it("adds Retry-After only for DependencyUnavailableError", () => {
     silenceLoggerError();
@@ -96,6 +158,18 @@ describe("toErrorResponse", () => {
       toErrorResponse(new DependencyUnavailableError("database")).headers.get("retry-after"),
     ).toBe("5");
     expect(toErrorResponse(new NotFoundError()).headers.get("retry-after")).toBeNull();
+    expect(toErrorResponse(new InternalError()).headers.get("retry-after")).toBeNull();
+  });
+
+  it("maps RateLimitedError to 429 with Retry-After set to its seconds", async () => {
+    const logError = silenceLoggerError();
+    const error = new RateLimitedError(42);
+    const res = toErrorResponse(error);
+    expect(res.status).toBe(429);
+    expect(res.headers.get("retry-after")).toBe("42");
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(await res.json()).toEqual({ code: "RATE_LIMITED", message: "Too many requests" });
+    expect(logError).toHaveBeenCalledWith("request failed", { err: error, code: "RATE_LIMITED" });
   });
 
   it("maps unknown errors and non-Error throws to a generic 500", async () => {
@@ -108,6 +182,10 @@ describe("toErrorResponse", () => {
       expect(text).not.toContain(SENTINEL);
     }
     expect(logError).toHaveBeenCalledTimes(3);
+    expect(logError).toHaveBeenLastCalledWith("request failed", {
+      err: { message: SENTINEL },
+      code: "INTERNAL",
+    });
   });
 
   it("keeps cause out of the response", async () => {
