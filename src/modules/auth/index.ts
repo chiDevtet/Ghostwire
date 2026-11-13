@@ -18,7 +18,9 @@ export type {
 } from "./internal/types";
 export {
   buildSessionCookie,
+  carriesSessionCookie,
   clearSessionCookie,
+  parseSessionTokenValue,
   readSessionToken,
   sessionCookieName,
 } from "./internal/cookies";

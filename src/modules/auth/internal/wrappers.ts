@@ -3,6 +3,8 @@ import { checkOrigin } from "@/modules/security";
 import { UnauthenticatedError, toErrorResponse } from "@/modules/shared";
 import {
   buildSessionCookie,
+  carriesSessionCookie,
+  clearSessionCookie,
   hasSessionCookie,
   readSessionToken,
   remainingMaxAgeSeconds,
@@ -27,8 +29,11 @@ export function withOrigin<P extends object>(handler: RouteHandler<P>): RouteHan
 }
 
 /**
- * Resolves the session cookie (401 UNAUTHENTICATED otherwise) and passes an AuthContext. When the
- * session slid, re-sends the cookie with the new Max-Age unless the handler set it itself.
+ * Resolves the session cookie (401 UNAUTHENTICATED otherwise) and passes an AuthContext. A 401
+ * for a request that carried a session cookie (either name, any non-empty value) also clears the
+ * configured cookie; a request without one gets no Set-Cookie. A resolveSession outage goes to
+ * the catch (503, no clear: an outage must not sign people out). When the session slid,
+ * re-sends the cookie with the new Max-Age unless the handler set it itself.
  */
 export function withSession<P extends object>(handler: SessionHandler<P>): RouteHandler<P> {
   return async (request, context) => {
@@ -37,7 +42,13 @@ export function withSession<P extends object>(handler: SessionHandler<P>): Route
       const meta = requestMeta(request);
       const token = readSessionToken(request, APP_ORIGIN);
       const resolution = await resolveSession(token, meta.at);
-      if (token === null || resolution === null) throw new UnauthenticatedError();
+      if (token === null || resolution === null) {
+        const response = toErrorResponse(new UnauthenticatedError());
+        if (carriesSessionCookie(request)) {
+          response.headers.append("Set-Cookie", clearSessionCookie(APP_ORIGIN));
+        }
+        return response;
+      }
       const auth: AuthContext = { ...meta, session: resolution.session };
       const response = await handler(request, auth, context);
       if (resolution.slid && !hasSessionCookie(response, APP_ORIGIN)) {
