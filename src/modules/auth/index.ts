@@ -16,3 +16,13 @@ export type {
   SignInResult,
   UnlinkResult,
 } from "./internal/types";
+export {
+  buildSessionCookie,
+  clearSessionCookie,
+  readSessionToken,
+  sessionCookieName,
+} from "./internal/cookies";
+export type { SessionCookieName } from "./internal/cookies";
+export { requestMeta } from "./internal/request";
+export { issueChallenge, verifySignIn } from "./internal/sign-in";
+export { createSession, logout, resolveSession } from "./internal/sessions";
