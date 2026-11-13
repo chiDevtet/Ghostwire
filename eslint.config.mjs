@@ -36,6 +36,14 @@ const MESSAGES = {
   app: "src/modules/** must not import from src/app/**.",
   mongodb: "Only src/modules/database/** may import 'mongodb'.",
   env: "Only src/modules/config/** may read process.env.",
+  clientServer:
+    "Client code (wallet-connect, ui, components) may import only '@/modules/validation' and '@/modules/wallet-connect' among modules.",
+  clientNode: "Client code (wallet-connect, ui, components) must not import 'node:*'.",
+  serverClient:
+    "Server modules must not import '@/modules/wallet-connect', '@/ui/*' or '@/components/*'.",
+  nextServer: "Only src/app/** may import next/headers or the server functions of next/navigation.",
+  uiLayer: "src/ui/** must not import '@/modules/wallet-connect' or '@/components/*'.",
+  bs58: "Only wallet/internal/base58.ts and wallet-connect/internal/base58.ts may import 'bs58'.",
 };
 
 /** R1: no deep imports into a module. */
@@ -102,6 +110,45 @@ const R4_ENV = {
   ],
 };
 
+/** R5a: client code may reach only these module entries (a deep path is R1's job). */
+const CLIENT_SERVER_RE = "^@/modules/(?!(validation|wallet-connect)$)[^/]+$";
+const CLIENT_NODE_RE = "^node:";
+/** R5b: server modules never reach client code. */
+const SERVER_CLIENT_RE = "^@/(modules/wallet-connect|ui|components)(/|$)";
+/** R5d: ui is the bottom layer. */
+const UI_LAYER_RE = "^@/(modules/wallet-connect|components)(/|$)";
+const BS58_RE = "^bs58(/|$)";
+const NEXT_HEADERS_RE = "^next/headers$";
+const NEXT_SERVER_NAV = ["redirect", "permanentRedirect", "notFound", "forbidden", "unauthorized"];
+
+const R5_CLIENT_SERVER = {
+  patterns: [{ regex: CLIENT_SERVER_RE, message: MESSAGES.clientServer }],
+  syntax: dynamicSelectors(CLIENT_SERVER_RE, MESSAGES.clientServer),
+};
+const R5_CLIENT_NODE = {
+  patterns: [{ regex: CLIENT_NODE_RE, message: MESSAGES.clientNode }],
+  syntax: dynamicSelectors(CLIENT_NODE_RE, MESSAGES.clientNode),
+};
+const R5_SERVER_CLIENT = {
+  patterns: [{ regex: SERVER_CLIENT_RE, message: MESSAGES.serverClient }],
+  syntax: dynamicSelectors(SERVER_CLIENT_RE, MESSAGES.serverClient),
+};
+/** R5c: next/headers and next/navigation's server functions only under src/app. */
+const R5_NEXT_SERVER = {
+  paths: [{ name: "next/navigation", importNames: NEXT_SERVER_NAV, message: MESSAGES.nextServer }],
+  patterns: [{ regex: NEXT_HEADERS_RE, message: MESSAGES.nextServer }],
+  syntax: dynamicSelectors(NEXT_HEADERS_RE, MESSAGES.nextServer),
+};
+const R5_UI_LAYER = {
+  patterns: [{ regex: UI_LAYER_RE, message: MESSAGES.uiLayer }],
+  syntax: dynamicSelectors(UI_LAYER_RE, MESSAGES.uiLayer),
+};
+/** R6: bs58 is contained in the two base58.ts files. */
+const R6_BS58 = {
+  patterns: [{ regex: BS58_RE, message: MESSAGES.bs58 }],
+  syntax: dynamicSelectors(BS58_RE, MESSAGES.bs58),
+};
+
 /**
  * Emits ONE config object with at most one entry each for no-restricted-imports,
  * no-restricted-syntax and no-restricted-properties, composed from the given atoms.
@@ -125,107 +172,208 @@ function scope(files, ignores, atoms, { noConsole = false } = {}) {
 }
 
 const SRC = { noConsole: true };
-const NOT_DB_OR_CONFIG = ["src/modules/{database,config}/**"];
+const WC = "src/modules/wallet-connect";
+/** Modules with their own scopes; excluded from the generic module scopes S7-S9b. */
+const SPECIAL_MODULES = ["src/modules/{database,config,wallet-connect}/**"];
+/** The two files allowed to import bs58; each has its own scope (S8a, S14a). */
+const BS58_FILES = ["src/modules/wallet/internal/base58.ts", `${WC}/internal/base58.ts`];
 /** Files under src/modules already claimed by the module root / internal / nested-internal scopes. */
 const MODULE_SCOPED_FILES = [
   "src/modules/*/*.{ts,tsx}",
   "src/modules/*/internal/*.{ts,tsx}",
   "src/modules/*/internal/*/**/*.{ts,tsx}",
 ];
+/** Atoms every server module scope adds (S3-S9b). */
+const SERVER = [R5_SERVER_CLIENT, R5_NEXT_SERVER, R6_BS58];
+/** Atoms every client scope adds (wallet-connect, ui, components). */
+const CLIENT = [R5_CLIENT_SERVER, R5_CLIENT_NODE, R5_NEXT_SERVER, R6_BS58];
 
 const boundaryScopes = [
-  // S1 app + other root src files (instrumentation has its own scope)
+  // S1 app + other root src files (instrumentation and proxy have their own scope)
   scope(
     ["src/app/**/*.{ts,tsx}", "src/*.{ts,tsx}"],
-    ["src/instrumentation.ts"],
-    [R1_DEEP, R1_REL_INTO_MODULES, R3_MONGODB, R4_ENV],
+    ["src/instrumentation.ts", "src/proxy.ts"],
+    [R1_DEEP, R1_REL_INTO_MODULES, R3_MONGODB, R4_ENV, R6_BS58],
     SRC,
   ),
-  // S2 instrumentation: process.env allowed (Next runtime file)
-  scope(["src/instrumentation.ts"], [], [R1_DEEP, R1_REL_INTO_MODULES, R3_MONGODB], SRC),
-  // S0 catch-all for any other src file (src/lib, src/components, ...): base rules
+  // S2 Next runtime files: process.env allowed
+  scope(
+    ["src/instrumentation.ts", "src/proxy.ts"],
+    [],
+    [R1_DEEP, R1_REL_INTO_MODULES, R3_MONGODB, R6_BS58],
+    SRC,
+  ),
+  // S0 catch-all for any other src file (src/lib, ...): base rules
   scope(
     ["src/**/*.{ts,tsx}"],
-    ["src/app/**", "src/*.{ts,tsx}", "src/modules/**"],
-    [R1_DEEP, R1_REL_INTO_MODULES, R3_MONGODB, R4_ENV],
+    ["src/app/**", "src/*.{ts,tsx}", "src/modules/**", "src/ui/**", "src/components/**"],
+    [R1_DEEP, R1_REL_INTO_MODULES, R3_MONGODB, R4_ENV, R5_NEXT_SERVER, R6_BS58],
     SRC,
   ),
   // S3/S4 database: mongodb allowed
-  scope(["src/modules/database/*.{ts,tsx}"], [], [R1_DEEP, R1_ESCAPE_1, R2_APP, R4_ENV], SRC),
+  scope(
+    ["src/modules/database/*.{ts,tsx}"],
+    [],
+    [R1_DEEP, R1_ESCAPE_1, R2_APP, R4_ENV, ...SERVER],
+    SRC,
+  ),
   scope(
     ["src/modules/database/internal/*.{ts,tsx}"],
     [],
-    [R1_DEEP, R1_ESCAPE_2, R2_APP, R4_ENV],
+    [R1_DEEP, R1_ESCAPE_2, R2_APP, R4_ENV, ...SERVER],
     SRC,
   ),
   // S5/S6 config: process.env allowed
-  scope(["src/modules/config/*.{ts,tsx}"], [], [R1_DEEP, R1_ESCAPE_1, R2_APP, R3_MONGODB], SRC),
+  scope(
+    ["src/modules/config/*.{ts,tsx}"],
+    [],
+    [R1_DEEP, R1_ESCAPE_1, R2_APP, R3_MONGODB, ...SERVER],
+    SRC,
+  ),
   scope(
     ["src/modules/config/internal/*.{ts,tsx}"],
     [],
-    [R1_DEEP, R1_ESCAPE_2, R2_APP, R3_MONGODB],
+    [R1_DEEP, R1_ESCAPE_2, R2_APP, R3_MONGODB, ...SERVER],
     SRC,
   ),
-  // S7/S8 every other module. These globs already cover auth, wallet and security (and every
-  // future module), so no per-module scope is added: a second scope for the same files would
-  // REPLACE these rules (see PITFALL above), not add to them.
+  // S7/S8 every other server module. These globs cover every server module except database,
+  // config and wallet-connect, which have their own scopes. A second scope for the same files
+  // would REPLACE these rules (see PITFALL above), not add to them.
   scope(
     ["src/modules/*/*.{ts,tsx}"],
-    NOT_DB_OR_CONFIG,
-    [R1_DEEP, R1_ESCAPE_1, R2_APP, R3_MONGODB, R4_ENV],
+    SPECIAL_MODULES,
+    [R1_DEEP, R1_ESCAPE_1, R2_APP, R3_MONGODB, R4_ENV, ...SERVER],
     SRC,
   ),
   scope(
     ["src/modules/*/internal/*.{ts,tsx}"],
-    NOT_DB_OR_CONFIG,
-    [R1_DEEP, R1_ESCAPE_2, R2_APP, R3_MONGODB, R4_ENV],
+    [...SPECIAL_MODULES, ...BS58_FILES],
+    [R1_DEEP, R1_ESCAPE_2, R2_APP, R3_MONGODB, R4_ENV, ...SERVER],
+    SRC,
+  ),
+  // S8a wallet/internal/base58.ts: S8 minus R6
+  scope(
+    ["src/modules/wallet/internal/base58.ts"],
+    [],
+    [R1_DEEP, R1_ESCAPE_2, R2_APP, R3_MONGODB, R4_ENV, R5_SERVER_CLIENT, R5_NEXT_SERVER],
     SRC,
   ),
   // S9 nested internal directories are forbidden outright (and still get the module rules)
   scope(
     ["src/modules/*/internal/*/**/*.{ts,tsx}"],
-    NOT_DB_OR_CONFIG,
-    [R1_FLAT_INTERNAL, R1_DEEP, R1_REL_INTO_MODULES, R2_APP, R3_MONGODB, R4_ENV],
+    SPECIAL_MODULES,
+    [R1_FLAT_INTERNAL, R1_DEEP, R1_REL_INTO_MODULES, R2_APP, R3_MONGODB, R4_ENV, ...SERVER],
     SRC,
   ),
   scope(
     ["src/modules/database/internal/*/**/*.{ts,tsx}"],
     [],
-    [R1_FLAT_INTERNAL, R1_DEEP, R1_REL_INTO_MODULES, R2_APP, R4_ENV],
+    [R1_FLAT_INTERNAL, R1_DEEP, R1_REL_INTO_MODULES, R2_APP, R4_ENV, ...SERVER],
     SRC,
   ),
   scope(
     ["src/modules/config/internal/*/**/*.{ts,tsx}"],
     [],
-    [R1_FLAT_INTERNAL, R1_DEEP, R1_REL_INTO_MODULES, R2_APP, R3_MONGODB],
+    [R1_FLAT_INTERNAL, R1_DEEP, R1_REL_INTO_MODULES, R2_APP, R3_MONGODB, ...SERVER],
     SRC,
   ),
   // S9b catch-all for any other file under src/modules (module/lib/x.ts, modules/x.ts, ...):
   // module rules; a depth-1 subdirectory may not climb into another module.
   scope(
     ["src/modules/**/*.{ts,tsx}"],
-    [...MODULE_SCOPED_FILES, ...NOT_DB_OR_CONFIG],
-    [R1_DEEP, R1_REL_INTO_MODULES, R1_ESCAPE_2, R2_APP, R3_MONGODB, R4_ENV],
+    [...MODULE_SCOPED_FILES, ...SPECIAL_MODULES],
+    [R1_DEEP, R1_REL_INTO_MODULES, R1_ESCAPE_2, R2_APP, R3_MONGODB, R4_ENV, ...SERVER],
     SRC,
   ),
   scope(
     ["src/modules/database/**/*.{ts,tsx}"],
     MODULE_SCOPED_FILES,
-    [R1_DEEP, R1_REL_INTO_MODULES, R1_ESCAPE_2, R2_APP, R4_ENV],
+    [R1_DEEP, R1_REL_INTO_MODULES, R1_ESCAPE_2, R2_APP, R4_ENV, ...SERVER],
     SRC,
   ),
   scope(
     ["src/modules/config/**/*.{ts,tsx}"],
     MODULE_SCOPED_FILES,
-    [R1_DEEP, R1_REL_INTO_MODULES, R1_ESCAPE_2, R2_APP, R3_MONGODB],
+    [R1_DEEP, R1_REL_INTO_MODULES, R1_ESCAPE_2, R2_APP, R3_MONGODB, ...SERVER],
+    SRC,
+  ),
+  // S13/S14/S15/S16 wallet-connect: the client module (S7-S9b shapes, CLIENT atoms instead of SERVER)
+  scope(
+    [`${WC}/*.{ts,tsx}`],
+    [],
+    [R1_DEEP, R1_ESCAPE_1, R2_APP, R3_MONGODB, R4_ENV, R5_UI_LAYER, ...CLIENT],
+    SRC,
+  ),
+  scope(
+    [`${WC}/internal/*.{ts,tsx}`],
+    [`${WC}/internal/base58.ts`],
+    [R1_DEEP, R1_ESCAPE_2, R2_APP, R3_MONGODB, R4_ENV, R5_UI_LAYER, ...CLIENT],
+    SRC,
+  ),
+  // S14a wallet-connect/internal/base58.ts: S14 minus R6
+  scope(
+    [`${WC}/internal/base58.ts`],
+    [],
+    [
+      R1_DEEP,
+      R1_ESCAPE_2,
+      R2_APP,
+      R3_MONGODB,
+      R4_ENV,
+      R5_UI_LAYER,
+      R5_CLIENT_SERVER,
+      R5_CLIENT_NODE,
+      R5_NEXT_SERVER,
+    ],
+    SRC,
+  ),
+  scope(
+    [`${WC}/internal/*/**/*.{ts,tsx}`],
+    [],
+    [
+      R1_FLAT_INTERNAL,
+      R1_DEEP,
+      R1_REL_INTO_MODULES,
+      R2_APP,
+      R3_MONGODB,
+      R4_ENV,
+      R5_UI_LAYER,
+      ...CLIENT,
+    ],
+    SRC,
+  ),
+  scope(
+    [`${WC}/**/*.{ts,tsx}`],
+    MODULE_SCOPED_FILES,
+    [R1_DEEP, R1_REL_INTO_MODULES, R1_ESCAPE_2, R2_APP, R3_MONGODB, R4_ENV, R5_UI_LAYER, ...CLIENT],
+    SRC,
+  ),
+  // S17 ui primitives: client, and the bottom layer
+  scope(
+    ["src/ui/**/*.{ts,tsx}"],
+    [],
+    [R1_DEEP, R1_REL_INTO_MODULES, R3_MONGODB, R4_ENV, R5_UI_LAYER, ...CLIENT],
+    SRC,
+  ),
+  // S18 feature components: client (may use ui and wallet-connect)
+  scope(
+    ["src/components/**/*.{ts,tsx}"],
+    [],
+    [R1_DEEP, R1_REL_INTO_MODULES, R3_MONGODB, R4_ENV, ...CLIENT],
     SRC,
   ),
   // S10 unit tests
   scope(["tests/unit/**/*.ts"], [], [R1_DEEP, R1_REL_INTO_MODULES, R3_MONGODB, R4_ENV]),
+  // S10a component tests (happy-dom)
+  scope(["tests/ui/**/*.{ts,tsx}"], [], [R1_DEEP, R1_REL_INTO_MODULES, R3_MONGODB, R4_ENV]),
   // S11 integration tests: mongodb allowed (labelled MongoErrors, ClientSession spies)
   scope(["tests/integration/**/*.ts"], [], [R1_DEEP, R1_REL_INTO_MODULES, R4_ENV]),
-  // S12 test setup and helpers: process.env allowed
-  scope(["tests/setup/**/*.ts", "tests/helpers/**/*.ts"], [], [R1_DEEP, R1_REL_INTO_MODULES]),
+  // S12 test setup, helpers and E2E: process.env allowed
+  scope(
+    ["tests/setup/**/*.{ts,tsx}", "tests/helpers/**/*.{ts,tsx}", "tests/e2e/**/*.ts"],
+    [],
+    [R1_DEEP, R1_REL_INTO_MODULES],
+  ),
 ];
 // Root config files (*.config.ts, eslint.config.mjs) are deliberately unscoped: they are the
 // spec's "Next/tooling config files" exception.
@@ -241,6 +389,8 @@ export default defineConfig([
     "tests/fixtures/**",
     ".agenkit/**",
     ".claude/**",
+    "playwright-report/**",
+    "test-results/**",
   ]),
   ...nextVitals,
   ...nextTs,
