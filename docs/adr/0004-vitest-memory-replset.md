@@ -40,8 +40,7 @@ Next.js server (Node). CI is deferred to the Ship phase.
 
 ## Consequences
 
-- On this host, set `MONGOMS_SYSTEM_BINARY=/usr/bin/mongod` before running tests.
-- An unrelated developer `mongod` may be listening on localhost:27017; the tests never use that port.
+- Host-specific notes (local `mongod` binary, unrelated mongod on localhost:27017) are in the README test section.
 - Outage tests start a dedicated standalone server and stop it; they take about 2 s each, bounded
   by the 2 s server-selection timeout.
 - No coverage threshold is set (out of scope); `bun run test:coverage` reports only.

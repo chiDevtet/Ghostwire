@@ -106,7 +106,8 @@ The error names the keys, never their values. This applies to `bun run dev` as w
 > **Never run `bun test`.** It starts Bun's built-in test runner, not Vitest. Always use `bun run test`.
 
 On hosts without a downloadable MongoDB build (for example Ubuntu 20.04), export
-`MONGOMS_SYSTEM_BINARY=/usr/bin/mongod` before running tests.
+`MONGOMS_SYSTEM_BINARY=/usr/bin/mongod` before running tests. An unrelated developer `mongod` may be
+listening on localhost:27017; the tests never use that port.
 
 **Known issue:** Bun can install `node_modules/prettier/bin/prettier.cjs` without the execute bit, so
 `bun run format` and `bun run format:check` fail with exit 126 "Permission denied" on some hosts. Run

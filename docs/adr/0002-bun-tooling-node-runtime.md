@@ -40,7 +40,7 @@ support is not yet verified (ADR-0005). Bun's installer is fast and its lockfile
   requires `<6.1.0`; ESLint pinned to 9.39.5 because `eslint-config-next@16.4.5`'s React,
   import and jsx-a11y plugins do not accept ESLint 10; `vite` 8.3.6 installed explicitly as a
   Vitest 5 peer.
-- `next lint` no longer exists in Next 16, so `lint` runs `eslint .`. `typecheck` runs
+- `next lint` no longer exists in Next 16, so `lint` runs `eslint . --max-warnings=0`. `typecheck` runs
   `next typegen && tsc --noEmit` so route types exist on a fresh clone.
 
 ## Observed during implementation
@@ -76,5 +76,5 @@ support is not yet verified (ADR-0005). Bun's installer is fast and its lockfile
 
 - Scope: none.
 - Privacy: none.
-- Security: positive. Exact pins, a frozen lockfile, untrusted postinstalls blocked, and a soak window.
+- Security: positive. Exact pins, a frozen lockfile, and a soak window. Bun does not run untrusted lifecycle scripts by default; none were present.
   The boot error names keys and static reasons only, never values.

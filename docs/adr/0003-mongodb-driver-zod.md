@@ -22,8 +22,8 @@ truth for document shapes, excluding `_id`. All database access goes through `@/
 ## Context
 
 There was no existing MongoDB convention and no Mongoose in the repository (`OPEN_DECISIONS.md` §3).
-Payment code later needs correct transactions and idempotency. `docs/DATA_MODEL.md` specifies
-snake_case collections and string amounts at persistence boundaries.
+Payment code later needs correct transactions and idempotency. `docs/DATA_MODEL.md` uses
+snake_case collection names and string amounts at persistence boundaries.
 
 ## Rationale
 
@@ -62,5 +62,10 @@ snake_case collections and string amounts at persistence boundaries.
 - Scope: none.
 - Privacy: neutral. No personal data is stored by this PR. The sanitized duplicate-key cause keeps
   user-supplied values out of logs.
-- Security: positive. Credentials in URIs are scrubbed from logs, and the driver's parse errors
-  (which can echo the URI) are not surfaced.
+- Security: positive, with residual risks. Credentials in URIs get best-effort pattern scrubbing in logs,
+  and the driver's parse errors (which can echo the URI) are not surfaced. Accepted residual risks are
+  documented in `src/modules/shared/internal/redact.ts`: a password containing whitespace is not fully
+  scrubbed, and some values get over-redacted.
+- Residual risk: `MongoServerError`s that are not duplicate-key errors (for example code 121 validation
+  errors and write-concern errors) keep the driver's message, which can echo document values. Review them
+  before logging or exposing them.

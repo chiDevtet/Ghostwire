@@ -73,4 +73,4 @@ the package architecture.
 
 - Scope: no product scope change.
 - Privacy: positive. The privacy adapter can be lint-isolated in PR 03.
-- Security: positive. Only `config` reads environment secrets and only `database` holds the driver.
+- Security: positive, within the limits of static linting. Lint enforces that direct `process.env` access happens only in `config` and that only `database` imports the driver. `process` aliasing and computed `import()` specifiers are accepted residual risks (see Consequences), so this is a guardrail, not a guarantee.
