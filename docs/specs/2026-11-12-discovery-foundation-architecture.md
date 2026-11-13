@@ -154,7 +154,8 @@ The cost is one flat-config pitfall. **A later config object that sets the same 
 │       ├── 0004-vitest-memory-replset.md          C
 │       └── 0005-helius-sdk-discovery.md           C
 ├── src/
-│   ├── instrumentation.ts               C  (fail-fast config at server boot)
+│   ├── instrumentation.ts               C  (fail-fast config at server boot; Node check, delegates)
+│   ├── instrumentation-node.ts          C  (Node-only: loadConfig, logs ConfigError, process.exit(1))
 │   ├── app/
 │   │   ├── layout.tsx                   C
 │   │   ├── page.tsx                     C
@@ -638,8 +639,16 @@ export async function GET(_request: Request): Promise<Response>;
 export async function register(): Promise<void>;
 // if (process.env.NEXT_RUNTIME !== "nodejs") return;
 // if (process.env.NEXT_PHASE === "phase-production-build") return;
-// const { loadConfig } = await import("@/modules/config"); loadConfig();  // throws ConfigError → server fails to start
+// const { failFastOnInvalidConfig } = await import("./instrumentation-node"); failFastOnInvalidConfig();
+
+// src/instrumentation-node.ts  [Node-only; separate file so the Edge bundle has no process.exit]
+export function failFastOnInvalidConfig(): void;
+// try { loadConfig() }
+// catch (error) { if (!(error instanceof ConfigError)) throw error;
+//                 logger.error("invalid configuration, exiting", { err: error }); process.exit(1); }
 ```
+
+Next 16.4.5 catches an error thrown from `register()` and keeps serving (a smoke test with invalid config stayed up until the timeout, exit 124), so throwing is not enough. The process exits explicitly with code 1. The code lives in `instrumentation-node.ts` because `process.exit` in `instrumentation.ts` produced an Edge Runtime build warning.
 
 - `/api/ready` catches **every** error, including `ConfigError`, and returns the fixed 503 body. Readiness is "not ready" whatever the reason.
 - `/api/health` imports nothing from `database` or `config`, and it cannot fail on dependencies.
@@ -801,12 +810,13 @@ finally:
 | `GET /api/ready` (readiness) | `ping()` against MongoDB, ≤ 2 s | 200 `{"status":"ready","checks":{"database":"up"}}` or 503 `{"status":"unavailable","checks":{"database":"down"}}` | Yes. Invalid config gives 503 if boot validation was somehow bypassed. |
 
 - An orchestrator should restart on liveness failure only. A database outage must not crash-loop the app.
-- Invalid config prevents the server from booting at all (`instrumentation.register`). This is the intended fail-fast behaviour, and it surfaces as a crash on deploy rather than a degraded pod.
+- Invalid config prevents the server from booting at all: `instrumentation.register` delegates to `failFastOnInvalidConfig()`, which logs the error and exits with code 1. This is the intended fail-fast behaviour, and it surfaces as a crash on deploy rather than a degraded pod.
 
 ### 5.5 Fail-fast config
 
-- `src/instrumentation.ts` calls `loadConfig()` on Node server start (`next start` and `next dev`). It skips the `phase-production-build` phase, so `bun run build` works without a `.env`.
-- `loadConfig` throws `ConfigError`. Next logs it and the process exits non-zero.
+- `src/instrumentation.ts` runs only when `NEXT_RUNTIME === "nodejs"` and skips the `phase-production-build` phase, so `bun run build` works without a `.env`. It then dynamically imports `failFastOnInvalidConfig()` from `src/instrumentation-node.ts`.
+- `failFastOnInvalidConfig()` calls `loadConfig()`. On `ConfigError` it calls `logger.error("invalid configuration, exiting", ...)` and `process.exit(1)`; any other error is rethrown. Next 16.4.5 catches errors thrown from `register()` and keeps serving, so the explicit exit is required. The behaviour is the same in `next start` and `next dev`: a bad `.env` stops the dev server until it is fixed and the server restarted.
+- The split into two files exists because `process.exit` in `instrumentation.ts` caused an Edge Runtime build warning.
 - The `ConfigError` message names only keys and static reasons, so it is safe even if the startup log is shipped somewhere.
 
 ---

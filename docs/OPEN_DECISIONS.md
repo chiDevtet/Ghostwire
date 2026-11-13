@@ -38,9 +38,9 @@ Record exact docs, SDK version, test date, wallet/provider, cluster, safe transa
 
 ## 3. Technical decisions
 
-- [ ] Inspect repository before locking package architecture.
+- [x] Inspect repository before locking package architecture. Resolved 2026-11-12: documentation-only repository; single Next.js app with internal module boundaries ([ADR-0001](adr/0001-single-app-module-boundaries.md)).
 - [ ] Confirm Next.js/Bun/TypeScript compatibility with Helius SDK and wallet adapters.
-- [ ] Confirm MongoDB conventions and whether Mongoose is used.
+- [x] Confirm MongoDB conventions and whether Mongoose is used. Resolved 2026-11-12: no prior convention and no Mongoose; official driver with Zod schemas ([ADR-0003](adr/0003-mongodb-driver-zod.md)).
 - [ ] Select auth/session provider.
 - [ ] Select KMS/secret manager for application encryption.
 - [ ] Select hosting/environment model.
@@ -72,3 +72,5 @@ Record exact docs, SDK version, test date, wallet/provider, cluster, safe transa
 For each resolved item, record decision, date, owner/approver, rationale, evidence/reference, consequences, and whether it changes scope, privacy guarantees, or security posture.
 
 Until resolved, the item remains an explicit assumption or blocker.
+
+Resolved items are recorded as ADRs in [`docs/adr/`](adr/), using the fields above.
