@@ -68,6 +68,28 @@ describe("readJsonBody", () => {
     expect(pulls).toBeLessThan(10);
   });
 
+  it("turns a stream that errors mid-read into VALIDATION_FAILED", async () => {
+    let sent = false;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent) {
+          controller.error(new Error("boom SENTINEL"));
+          return;
+        }
+        sent = true;
+        controller.enqueue(new TextEncoder().encode('{"a":'));
+      },
+    });
+    const request = new Request(URL_, {
+      method: "POST",
+      body: stream,
+      duplex: "half",
+    } as RequestInit);
+    const error = await validationErrorOf(readJsonBody(request));
+    expect(error.code).toBe("VALIDATION_FAILED");
+    expect(error.message).not.toContain("SENTINEL");
+  });
+
   it.each([
     { label: "a missing body", request: () => post(null) },
     { label: "an empty body", request: () => post("") },

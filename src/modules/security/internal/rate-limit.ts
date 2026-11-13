@@ -42,6 +42,14 @@ export function fixedWindow(at: Date, windowSeconds: number): FixedWindow {
   };
 }
 
+const ROUTE = /^[a-z][a-z_]{0,31}$/;
+
+/** The "<route>" prefix of a "<route>:<kind>:<subject>" key, or "unknown". Never the subject. */
+function routeOf(key: string): string {
+  const [route, ...rest] = key.split(":");
+  return rest.length > 0 && route !== undefined && ROUTE.test(route) ? route : "unknown";
+}
+
 function isDuplicateKey(error: unknown): boolean {
   return error instanceof ConflictError && error.code === "DUPLICATE_KEY";
 }
@@ -50,8 +58,8 @@ function isDuplicateKey(error: unknown): boolean {
  * Counts one hit for `key` ("<route>:<kind>:<subject>", stored only as sha256Hex(key)) in the
  * current fixed window. Rejected hits still count, so a flood keeps its own bucket full.
  * @throws RangeError for an invalid limit or window
- * @throws RateLimitedError when the post-increment count exceeds limit (after a best-effort
- *         rate_limited event); DependencyUnavailableError when the database is down (fail closed)
+ * @throws RateLimitedError when the post-increment count exceeds limit (a best-effort
+ *         rate_limited event is recorded for the first rejection per window only); DependencyUnavailableError when the database is down (fail closed)
  */
 export async function rateLimit(
   key: string,
@@ -78,15 +86,18 @@ export async function rateLimit(
     doc = await rateLimits.findOneAndUpdate(filter, update, options);
   }
   if (doc === null || doc.count > limit) {
-    logger.warn("rate limited", { route: key.split(":")[0] ?? "" });
-    await recordSecurityEvent({
-      type: "rate_limited",
-      severity: "warning",
-      userId: null,
-      walletId: null,
-      reason: "rate_limit_exceeded",
-      at,
-    });
+    // Only the first rejection in a bucket's window is logged and recorded; later ones just throw.
+    if (doc === null || doc.count === limit + 1) {
+      logger.warn("rate limited", { route: routeOf(key) });
+      await recordSecurityEvent({
+        type: "rate_limited",
+        severity: "warning",
+        userId: null,
+        walletId: null,
+        reason: "rate_limit_exceeded",
+        at,
+      });
+    }
     throw new RateLimitedError(window.retryAfterSeconds);
   }
 }

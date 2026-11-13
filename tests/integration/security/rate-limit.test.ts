@@ -1,7 +1,7 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { ensureIndexes, getDb } from "@/modules/database";
 import { rateLimit, registerSecurityIndexes, sha256Hex } from "@/modules/security";
-import { RateLimitedError } from "@/modules/shared";
+import { RateLimitedError, logger } from "@/modules/shared";
 
 const AT = new Date("2026-11-13T10:00:30.000Z");
 
@@ -60,19 +60,41 @@ describe("rateLimit", () => {
   });
 
   it("records a rate_limited security event with a static reason", async () => {
+    const db = await getDb();
+    await db.collection("security_events").deleteMany({});
     await rateLimit("t6:ip:unknown", 1, 60, AT);
     await rateLimit("t6:ip:unknown", 1, 60, AT).catch(() => undefined);
-    const event = await (
-      await getDb()
-    )
-      .collection("security_events")
-      .findOne({ type: "rate_limited" });
-    expect(event).toMatchObject({
+    const events = await db.collection("security_events").find({ type: "rate_limited" }).toArray();
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
       severity: "warning",
       reason: "rate_limit_exceeded",
       userId: null,
       walletId: null,
     });
+  });
+
+  it("records one event for the first rejection per window, not for later ones", async () => {
+    const db = await getDb();
+    await db.collection("security_events").deleteMany({});
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    await rateLimit("ratetest:ip:unknown", 1, 60, AT);
+    for (let i = 0; i < 3; i += 1) {
+      const error: unknown = await rateLimit("ratetest:ip:unknown", 1, 60, AT).catch(
+        (e: unknown) => e,
+      );
+      expect(error).toBeInstanceOf(RateLimitedError);
+      expect((error as RateLimitedError).retryAfterSeconds).toBe(30);
+    }
+    expect(await db.collection("security_events").countDocuments({ type: "rate_limited" })).toBe(1);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith("rate limited", { route: "ratetest" });
+
+    const next = new Date("2026-11-13T10:01:00.000Z");
+    await rateLimit("ratetest:ip:unknown", 1, 60, next);
+    await rateLimit("ratetest:ip:unknown", 1, 60, next).catch(() => undefined);
+    expect(await db.collection("security_events").countDocuments({ type: "rate_limited" })).toBe(2);
+    warn.mockRestore();
   });
 
   it("throws RangeError for an invalid limit", async () => {

@@ -25,15 +25,20 @@ export async function readJsonBody(
   const reader = request.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > maxBytes) {
-      await reader.cancel().catch(() => undefined);
-      throw invalidBody("too large");
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw invalidBody("too large");
+      }
+      chunks.push(value);
     }
-    chunks.push(value);
+  } catch (error) {
+    if (error instanceof ValidationError) throw error;
+    throw invalidBody("unreadable");
   }
   if (total === 0) throw invalidBody("empty");
   let text: string;
