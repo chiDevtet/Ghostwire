@@ -6,8 +6,10 @@ import {
   DependencyUnavailableError,
   InternalError,
   NotFoundError,
+  RateLimitedError,
   ValidationError,
   logger,
+  noContent,
   noStoreJson,
   toErrorResponse,
 } from "@/modules/shared";
@@ -37,6 +39,23 @@ describe("noStoreJson", () => {
     const res = noStoreJson({ amount: 18446744073709551616n, nested: { list: [1n, 2] } });
     expect(await res.text()).toBe('{"amount":"18446744073709551616","nested":{"list":["1",2]}}');
     expect(await noStoreJson(5n).text()).toBe('"5"');
+  });
+});
+
+describe("noContent", () => {
+  it("returns 204 with no body and no-store", async () => {
+    const res = noContent();
+    expect(res.status).toBe(204);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(await res.text()).toBe("");
+  });
+
+  it("applies extra headers, including Set-Cookie, but never drops no-store", () => {
+    const res = noContent({
+      headers: { "Set-Cookie": "a=; Max-Age=0", "Cache-Control": "public" },
+    });
+    expect(res.headers.getSetCookie()).toEqual(["a=; Max-Age=0"]);
+    expect(res.headers.get("cache-control")).toBe("no-store");
   });
 });
 
@@ -140,6 +159,17 @@ describe("toErrorResponse", () => {
     ).toBe("5");
     expect(toErrorResponse(new NotFoundError()).headers.get("retry-after")).toBeNull();
     expect(toErrorResponse(new InternalError()).headers.get("retry-after")).toBeNull();
+  });
+
+  it("maps RateLimitedError to 429 with Retry-After set to its seconds", async () => {
+    const logError = silenceLoggerError();
+    const error = new RateLimitedError(42);
+    const res = toErrorResponse(error);
+    expect(res.status).toBe(429);
+    expect(res.headers.get("retry-after")).toBe("42");
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(await res.json()).toEqual({ code: "RATE_LIMITED", message: "Too many requests" });
+    expect(logError).toHaveBeenCalledWith("request failed", { err: error, code: "RATE_LIMITED" });
   });
 
   it("maps unknown errors and non-Error throws to a generic 500", async () => {

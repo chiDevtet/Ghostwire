@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   AppError,
+  AuthFailedError,
   ConfigError,
   ConflictError,
   DependencyUnavailableError,
+  ForbiddenOriginError,
   InternalError,
   NotFoundError,
+  RateLimitedError,
+  UnauthenticatedError,
   ValidationError,
   isAppError,
 } from "@/modules/shared";
@@ -46,6 +50,27 @@ describe("AppError subclasses", () => {
       code: "INTERNAL",
       status: 500,
       safe: "Internal error",
+    },
+    {
+      name: "UnauthenticatedError",
+      make: () => new UnauthenticatedError(),
+      code: "UNAUTHENTICATED",
+      status: 401,
+      safe: "Authentication required",
+    },
+    {
+      name: "ForbiddenOriginError",
+      make: () => new ForbiddenOriginError(),
+      code: "ORIGIN_REJECTED",
+      status: 403,
+      safe: "Origin not allowed",
+    },
+    {
+      name: "RateLimitedError",
+      make: () => new RateLimitedError(30),
+      code: "RATE_LIMITED",
+      status: 429,
+      safe: "Too many requests",
     },
   ])("$name has the documented defaults", ({ name, make, code, status, safe }) => {
     const error = make();
@@ -121,5 +146,37 @@ describe("isAppError", () => {
     expect(isAppError({ code: "X", httpStatus: 400, safeMessage: "x" })).toBe(false);
     expect(isAppError("boom")).toBe(false);
     expect(isAppError(undefined)).toBe(false);
+  });
+});
+
+describe("AuthFailedError", () => {
+  it("is a 401 AUTH_FAILED whose reason stays out of the safe message", () => {
+    const error = new AuthFailedError("signature_invalid");
+    expect(error).toBeInstanceOf(AppError);
+    expect(error.name).toBe("AuthFailedError");
+    expect(error.code).toBe("AUTH_FAILED");
+    expect(error.httpStatus).toBe(401);
+    expect(error.safeMessage).toBe("Authentication failed");
+    expect(error.reason).toBe("signature_invalid");
+    expect(error.message).toBe("auth failed: signature_invalid");
+  });
+
+  it("keeps a cause", () => {
+    const cause = new Error("inner");
+    expect(new AuthFailedError("user_inactive", { cause }).cause).toBe(cause);
+  });
+});
+
+describe("RateLimitedError", () => {
+  it.each([
+    { input: 30, expected: 30 },
+    { input: 1.2, expected: 2 },
+    { input: 0, expected: 1 },
+    { input: -5, expected: 1 },
+    { input: 86_401, expected: 86_400 },
+    { input: Number.NaN, expected: 1 },
+    { input: Number.POSITIVE_INFINITY, expected: 1 },
+  ])("normalizes retryAfterSeconds $input to $expected", ({ input, expected }) => {
+    expect(new RateLimitedError(input).retryAfterSeconds).toBe(expected);
   });
 });

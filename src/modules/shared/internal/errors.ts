@@ -96,6 +96,61 @@ export class InternalError extends AppError {
   }
 }
 
+export class UnauthenticatedError extends AppError {
+  constructor(options: AppErrorOptions = {}) {
+    super(
+      initFrom(
+        { code: "UNAUTHENTICATED", httpStatus: 401, safeMessage: "Authentication required" },
+        options,
+      ),
+    );
+  }
+}
+
+/** A failed sign-in or link proof. `reason` is a static string for logs and security events only. */
+export class AuthFailedError extends AppError {
+  readonly reason: string;
+
+  constructor(reason: string, options: AppErrorOptions = {}) {
+    super(
+      initFrom(
+        { code: "AUTH_FAILED", httpStatus: 401, safeMessage: "Authentication failed" },
+        { message: `auth failed: ${reason}`, ...options },
+      ),
+    );
+    this.reason = reason;
+  }
+}
+
+export class ForbiddenOriginError extends AppError {
+  constructor(options: AppErrorOptions = {}) {
+    super(
+      initFrom(
+        { code: "ORIGIN_REJECTED", httpStatus: 403, safeMessage: "Origin not allowed" },
+        options,
+      ),
+    );
+  }
+}
+
+const MAX_RETRY_AFTER_SECONDS = 86_400;
+
+export class RateLimitedError extends AppError {
+  /** Integer in [1, 86400]: Math.ceil of the input, clamped. Sent as Retry-After. */
+  readonly retryAfterSeconds: number;
+
+  constructor(retryAfterSeconds: number, options: AppErrorOptions = {}) {
+    super(
+      initFrom(
+        { code: "RATE_LIMITED", httpStatus: 429, safeMessage: "Too many requests" },
+        options,
+      ),
+    );
+    const seconds = Number.isFinite(retryAfterSeconds) ? Math.ceil(retryAfterSeconds) : 1;
+    this.retryAfterSeconds = Math.min(MAX_RETRY_AFTER_SECONDS, Math.max(1, seconds));
+  }
+}
+
 export interface ConfigIssue {
   readonly key: string;
   readonly reason: string;
