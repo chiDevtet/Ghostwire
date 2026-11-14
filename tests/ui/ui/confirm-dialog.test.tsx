@@ -46,4 +46,19 @@ describe("ConfirmDialog", () => {
     );
     expect(screen.getByRole("alert").textContent).toBe("You can't unlink your only wallet.");
   });
+
+  it("calls onCancel on Escape and on Close", async () => {
+    const onCancel = vi.fn();
+    const user = userEvent.setup();
+    render(<ConfirmDialog {...BASE} onConfirm={vi.fn()} onCancel={onCancel} />);
+    await user.keyboard("{Escape}");
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    expect(onCancel).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([[null], [undefined]])("renders no alert when error is %s", (error) => {
+    render(<ConfirmDialog {...BASE} error={error} onConfirm={vi.fn()} onCancel={vi.fn()} />);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
 });

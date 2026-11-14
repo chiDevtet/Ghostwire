@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { Dialog } from "@/ui/dialog";
 
@@ -102,5 +102,78 @@ describe("Dialog", () => {
     await openDialog({ onClose });
     fireEvent(screen.getByRole("dialog"), new Event("close"));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+function SelfFocusing() {
+  const ref = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    ref.current?.focus();
+  }, []);
+  return (
+    <button type="button" ref={ref}>
+      Self focused
+    </button>
+  );
+}
+
+function ChildFocusHarness() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}>
+        Open
+      </button>
+      <Dialog open={open} title="T" onClose={() => setOpen(false)}>
+        {open && <SelfFocusing />}
+      </Dialog>
+    </>
+  );
+}
+
+function UnmountHarness() {
+  const [shown, setShown] = useState(false);
+  return (
+    <>
+      <button type="button" onClick={() => setShown(true)}>
+        Open
+      </button>
+      <button type="button" onClick={() => setShown(false)} data-testid="remove">
+        Remove
+      </button>
+      {shown && (
+        <Dialog open title="T" onClose={() => undefined}>
+          <p>body</p>
+        </Dialog>
+      )}
+    </>
+  );
+}
+
+describe("Dialog focus return", () => {
+  it("returns focus to the opener even when a child focuses itself in a mount effect", async () => {
+    const user = userEvent.setup();
+    render(<ChildFocusHarness />);
+    await user.click(screen.getByRole("button", { name: "Open" }));
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Open" }));
+  });
+
+  it("returns focus to the opener after the Close button", async () => {
+    const user = await openDialog();
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Open" }));
+  });
+
+  it("closes and returns focus when unmounted while open", async () => {
+    const user = userEvent.setup();
+    render(<UnmountHarness />);
+    const opener = screen.getByRole("button", { name: "Open" });
+    await user.click(opener);
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    // Unmount without going through the dialog (focus is inside the dialog at this point).
+    fireEvent.click(screen.getByTestId("remove"));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(opener);
   });
 });

@@ -1,7 +1,14 @@
 "use client";
 
 import { X } from "lucide-react";
-import { useEffect, useId, useRef, type KeyboardEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import { Button } from "./button";
 
 export interface DialogProps {
@@ -43,11 +50,22 @@ export function Dialog({
   const titleId = useId();
   const descriptionId = useId();
 
+  const openerRef = useRef<HTMLElement | null>(null);
+
+  // Capture the opener in a layout effect: it runs before any child useEffect, so a child that
+  // focuses its own element on mount cannot be recorded as the element to return focus to.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const active = document.activeElement;
+    openerRef.current = active instanceof HTMLElement ? active : null;
+  }, [open]);
+
+  // Focus work stays in a passive effect: React itself restores focus after a layout-phase
+  // cleanup, which would undo returning focus to the opener there.
   useEffect(() => {
     const dialog = ref.current;
     if (!open || dialog === null) return;
-    const active = document.activeElement;
-    const returnTo = active instanceof HTMLElement ? active : null;
+    const returnTo = openerRef.current;
     if (!dialog.open) dialog.showModal();
     const target = dialog.querySelector<HTMLElement>("[data-autofocus]") ?? focusables(dialog)[0];
     target?.focus();
@@ -102,7 +120,7 @@ export function Dialog({
           <h2 id={titleId} className="font-heading text-xl font-semibold">
             {title}
           </h2>
-          <Button variant="ghost" className="px-3" onClick={onClose}>
+          <Button variant="ghost" onClick={onClose}>
             <X aria-hidden="true" className="size-4" />
             {closeLabel}
           </Button>
