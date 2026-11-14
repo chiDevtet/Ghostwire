@@ -3,10 +3,10 @@ import { UnauthenticatedError } from "@/modules/shared";
 import { listWalletsByUser, toWalletView, type WalletView } from "@/modules/wallet";
 import { users } from "./collections";
 import { ensureAuthReady } from "./indexes";
-import type { AuthContext, MeView } from "./types";
+import type { MeView, SessionReader } from "./types";
 
 /** GET /me. Lists every wallet of the user, disconnected ones included, with their status. */
-export async function getMe(auth: AuthContext): Promise<MeView> {
+export async function getMe(auth: SessionReader): Promise<MeView> {
   await ensureAuthReady();
   const user = await users.findOne(safeEquals("_id", auth.session.userId));
   if (user === null) throw new UnauthenticatedError();
@@ -23,7 +23,7 @@ export async function getMe(auth: AuthContext): Promise<MeView> {
 }
 
 /** GET /wallets. Same view as /me, disconnected wallets included. */
-export async function listWallets(auth: AuthContext): Promise<WalletView[]> {
+export async function listWallets(auth: SessionReader): Promise<WalletView[]> {
   await ensureAuthReady();
   const wallets = await listWalletsByUser(auth.session.userId);
   return wallets.map((wallet) => toWalletView(wallet));

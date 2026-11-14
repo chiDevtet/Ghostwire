@@ -3,12 +3,12 @@ import { recordSecurityEvent } from "@/modules/security";
 import { NotFoundError } from "@/modules/shared";
 import { sessions } from "./collections";
 import { ensureAuthReady } from "./indexes";
-import type { AuthContext, RevokeResult, SessionView } from "./types";
+import type { AuthContext, RevokeResult, SessionReader, SessionView } from "./types";
 
 const MAX_SESSIONS_LISTED = 100;
 
 /** Active sessions of the caller (not revoked, not expired), lastSeenAt descending, limit 100. */
-export async function listSessions(auth: AuthContext): Promise<SessionView[]> {
+export async function listSessions(auth: SessionReader): Promise<SessionView[]> {
   await ensureAuthReady();
   const docs = await sessions.find(
     Object.assign({}, safeEquals("userId", auth.session.userId), {

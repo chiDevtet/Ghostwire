@@ -1,6 +1,7 @@
 import { loadConfig } from "@/modules/config";
 import { safeEquals, type ClientSession, type ObjectId } from "@/modules/database";
 import { recordSecurityEvent, sha256Hex } from "@/modules/security";
+import { isAppError, logger } from "@/modules/shared";
 import type { SolanaNetwork } from "@/modules/wallet";
 import { sessions, users, type SessionDoc } from "./collections";
 import { ensureAuthReady } from "./indexes";
@@ -43,13 +44,16 @@ export function createSession(
 
 /**
  * null for: no token, unknown hash, revoked, expired (idle or absolute), user missing or not
- * active. On success slides expiresAt to min(at + idle, absoluteExpiresAt), at most once per
- * hour, with a compare-and-set on lastSeenAt so concurrent requests write once.
+ * active. On success, unless options.slide is false, slides expiresAt to
+ * min(at + idle, absoluteExpiresAt), at most once per hour, with a compare-and-set on lastSeenAt
+ * so concurrent requests write once. With slide: false it only reads (server components).
  */
 export async function resolveSession(
   token: string | null,
   at: Date,
+  options: { readonly slide?: boolean } = {},
 ): Promise<SessionResolution | null> {
+  const slide = options.slide ?? true;
   if (token === null) return null;
   await ensureAuthReady();
   const doc = await sessions.findOne(safeEquals("tokenHash", sha256Hex(token)));
@@ -67,7 +71,7 @@ export async function resolveSession(
 
   let expiresAt = doc.expiresAt;
   let slid = false;
-  if (atMs - doc.lastSeenAt.getTime() >= SLIDE_INTERVAL_MS) {
+  if (slide && atMs - doc.lastSeenAt.getTime() >= SLIDE_INTERVAL_MS) {
     const { SESSION_IDLE_DAYS } = loadConfig();
     const next = new Date(
       Math.min(atMs + SESSION_IDLE_DAYS * DAY_MS, doc.absoluteExpiresAt.getTime()),
@@ -117,6 +121,38 @@ export async function logout(auth: AuthContext): Promise<void> {
       walletId: auth.session.walletId,
       reason: "logout",
       at: auth.at,
+    });
+  }
+}
+
+/**
+ * Best effort, never rejects: revokes the still-active session behind `token` (any user) with
+ * reason "replaced". Used by sign-in after the new session has committed. The atomic
+ * revokedAt: null filter is the same mechanism logout uses. A failure logs a code only (never
+ * err, so a driver error cannot leak a filter's token hash).
+ */
+export async function replaceSession(token: string | null, at: Date): Promise<void> {
+  if (token === null) return;
+  try {
+    const previous = await resolveSession(token, at, { slide: false });
+    if (previous === null) return;
+    const result = await sessions.updateOne(
+      Object.assign({}, safeEquals("_id", previous.session.id), { revokedAt: null }),
+      { $set: { revokedAt: at } },
+    );
+    if (result.modifiedCount === 1) {
+      await recordSecurityEvent({
+        type: "session_revoked",
+        severity: "info",
+        userId: previous.session.userId,
+        walletId: previous.session.walletId,
+        reason: "replaced",
+        at,
+      });
+    }
+  } catch (error) {
+    logger.warn("previous session revoke failed", {
+      code: isAppError(error) ? error.code : "UNKNOWN",
     });
   }
 }

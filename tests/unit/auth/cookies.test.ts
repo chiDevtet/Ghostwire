@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   buildSessionCookie,
+  carriesSessionCookie,
   clearSessionCookie,
+  parseSessionTokenValue,
   readSessionToken,
   sessionCookieName,
 } from "@/modules/auth";
@@ -63,5 +65,40 @@ describe("readSessionToken", () => {
 
   it("returns null without a Cookie header", () => {
     expect(readSessionToken(new Request(`${HTTPS}/x`), HTTPS)).toBeNull();
+  });
+});
+
+describe("parseSessionTokenValue", () => {
+  it("returns a well-formed token unchanged", () => {
+    expect(parseSessionTokenValue(TOKEN)).toBe(TOKEN);
+  });
+
+  it.each([undefined, "", "short", `${TOKEN}x`, `${TOKEN.slice(0, 42)}!`])(
+    "returns null for %s",
+    (value) => {
+      expect(parseSessionTokenValue(value)).toBeNull();
+    },
+  );
+});
+
+describe("carriesSessionCookie", () => {
+  it.each([
+    `__Host-gw_session=${TOKEN}`,
+    "gw_session=anything",
+    "a=1; __Host-gw_session=malformed; b=2",
+    "gw_session=x",
+  ])("is true for %s", (cookie) => {
+    expect(carriesSessionCookie(withCookie(cookie))).toBe(true);
+  });
+
+  it.each(["__Host-gw_session=", "gw_session=", "a=1; b=2", "gw_session", "x_gw_session=abc"])(
+    "is false for %s",
+    (cookie) => {
+      expect(carriesSessionCookie(withCookie(cookie))).toBe(false);
+    },
+  );
+
+  it("is false without a Cookie header", () => {
+    expect(carriesSessionCookie(new Request(`${HTTPS}/x`))).toBe(false);
   });
 });

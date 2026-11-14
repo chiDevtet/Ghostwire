@@ -1,12 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   AppError,
+  AuthFailedError,
   ConfigError,
   ConflictError,
   DependencyUnavailableError,
   InternalError,
   NotFoundError,
   RateLimitedError,
+  UnauthenticatedError,
   ValidationError,
   logger,
   noContent,
@@ -63,6 +65,14 @@ function silenceLoggerError() {
   return vi.spyOn(logger, "error").mockImplementation(() => undefined);
 }
 
+function silenceLoggerWarn() {
+  return vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+}
+
+function silenceLoggerDebug() {
+  return vi.spyOn(logger, "debug").mockImplementation(() => undefined);
+}
+
 describe("toErrorResponse", () => {
   it.each([
     {
@@ -70,22 +80,60 @@ describe("toErrorResponse", () => {
       status: 400,
       code: "VALIDATION_FAILED",
       message: "Invalid request",
-      logged: "VALIDATION_FAILED",
     },
     {
       error: new NotFoundError({ message: SENTINEL }),
       status: 404,
       code: "NOT_FOUND",
       message: "Not found",
-      logged: "NOT_FOUND",
     },
     {
       error: new ConflictError({ message: SENTINEL }),
       status: 409,
       code: "CONFLICT",
       message: "Conflict",
-      logged: "CONFLICT",
     },
+    {
+      error: new AuthFailedError("signature_invalid", { message: SENTINEL }),
+      status: 401,
+      code: "AUTH_FAILED",
+      message: "Authentication failed",
+    },
+  ])(
+    "maps $code to $status with only the safe message and logs warn { code, status } (no err)",
+    async ({ error, status, code, message }) => {
+      const logError = silenceLoggerError();
+      const logWarn = silenceLoggerWarn();
+      const res = toErrorResponse(error);
+      expect(res.status).toBe(status);
+      expect(res.headers.get("cache-control")).toBe("no-store");
+      const text = await res.text();
+      expect(JSON.parse(text)).toEqual({ code, message });
+      expect(text).not.toContain(SENTINEL);
+      expect(logWarn).toHaveBeenCalledExactlyOnceWith("request rejected", { code, status });
+      expect(logError).not.toHaveBeenCalled();
+    },
+  );
+
+  it("logs UNAUTHENTICATED at debug with { code, status } only", async () => {
+    const logError = silenceLoggerError();
+    const logWarn = silenceLoggerWarn();
+    const logDebug = silenceLoggerDebug();
+    const res = toErrorResponse(new UnauthenticatedError());
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({
+      code: "UNAUTHENTICATED",
+      message: "Authentication required",
+    });
+    expect(logDebug).toHaveBeenCalledExactlyOnceWith("request rejected", {
+      code: "UNAUTHENTICATED",
+      status: 401,
+    });
+    expect(logWarn).not.toHaveBeenCalled();
+    expect(logError).not.toHaveBeenCalled();
+  });
+
+  it.each([
     {
       error: new DependencyUnavailableError("database", { message: SENTINEL }),
       status: 503,
@@ -154,6 +202,7 @@ describe("toErrorResponse", () => {
 
   it("adds Retry-After only for DependencyUnavailableError", () => {
     silenceLoggerError();
+    silenceLoggerWarn();
     expect(
       toErrorResponse(new DependencyUnavailableError("database")).headers.get("retry-after"),
     ).toBe("5");
@@ -163,13 +212,18 @@ describe("toErrorResponse", () => {
 
   it("maps RateLimitedError to 429 with Retry-After set to its seconds", async () => {
     const logError = silenceLoggerError();
+    const logWarn = silenceLoggerWarn();
     const error = new RateLimitedError(42);
     const res = toErrorResponse(error);
     expect(res.status).toBe(429);
     expect(res.headers.get("retry-after")).toBe("42");
     expect(res.headers.get("cache-control")).toBe("no-store");
     expect(await res.json()).toEqual({ code: "RATE_LIMITED", message: "Too many requests" });
-    expect(logError).toHaveBeenCalledWith("request failed", { err: error, code: "RATE_LIMITED" });
+    expect(logWarn).toHaveBeenCalledExactlyOnceWith("request rejected", {
+      code: "RATE_LIMITED",
+      status: 429,
+    });
+    expect(logError).not.toHaveBeenCalled();
   });
 
   it("maps unknown errors and non-Error throws to a generic 500", async () => {

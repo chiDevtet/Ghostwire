@@ -106,8 +106,10 @@ The error names the keys, never their values. This applies to `bun run dev` as w
 | `bun run start`                                  | Serve the production build                                          |
 | `bun run lint`                                   | ESLint, including the module boundary rules (zero warnings allowed) |
 | `bun run typecheck`                              | `next typegen` then `tsc --noEmit`                                  |
-| `bun run test`                                   | All Vitest projects (unit + integration)                            |
+| `bun run test`                                   | All Vitest projects (unit + integration + ui)                       |
 | `bun run test:unit` / `bun run test:integration` | One project only                                                    |
+| `bun run test:ui`                                | Component tests only (happy-dom + React Testing Library)            |
+| `bun run test:e2e`                               | Playwright end-to-end tests (Chromium; see below)                   |
 | `bun run test:coverage`                          | Tests with a V8 coverage report in `coverage/` (no threshold)       |
 | `bun run format` / `bun run format:check`        | Prettier write / check                                              |
 
@@ -120,6 +122,42 @@ listening on localhost:27017; the tests never use that port.
 **Known issue:** Bun can install `node_modules/prettier/bin/prettier.cjs` without the execute bit, so
 `bun run format` and `bun run format:check` fail with exit 126 "Permission denied" on some hosts. Run
 `node node_modules/prettier/bin/prettier.cjs --check .` (or `--write <files>`) instead.
+
+### UI development
+
+- Brand tokens (colours, radii, fonts) live in `@theme` in `src/app/globals.css` (Tailwind CSS v4).
+  The theme is dark only; violet is for primary buttons, the selected nav item, focus rings and
+  brand accents.
+- Primitives without domain logic live in `src/ui/`; feature components in `src/components/`;
+  the client-only wallet module in `src/modules/wallet-connect/` (Wallet Standard, no
+  `@solana/web3.js`). See [ADR-0007](docs/adr/0007-frontend-stack-wallet-connection.md).
+- Client code (`wallet-connect`, `ui`, `components`) may import only `@/modules/validation` and
+  `@/modules/wallet-connect` among modules, and never `node:*`; `src/ui` never imports features.
+- Fonts are self-hosted from `node_modules`; there are no analytics and no third-party requests.
+- Pages get a per-request nonce Content-Security-Policy from `src/proxy.ts`, so every page is
+  dynamically rendered. Never add inline scripts or third-party origins.
+- Dates show in UTC. Never put an address, token or id in a URL, title or `localStorage`.
+
+### End-to-end tests
+
+```bash
+bunx playwright install chromium
+# Ubuntu 20.04 hosts: Playwright 1.65 refuses that platform; this override works there
+PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu22.04-x64 bunx playwright install chromium
+
+MONGOMS_SYSTEM_BINARY=/usr/bin/mongod bun run test:e2e
+```
+
+The global setup starts an in-memory MongoDB replica set, runs `next build`, starts `next start`
+on `http://127.0.0.1:3210` and waits for `/api/ready`. Options:
+
+- `GW_E2E_PORT=<port>`: another port (the run refuses to start if the port already answers).
+- `GW_E2E_SKIP_BUILD=1`: reuse the existing `.next` build.
+
+Reports go to `playwright-report/` (HTML) and `test-results/` (traces, screenshots and the server
+log `test-results/e2e-server.log`). E2E is not part of `bun run test`, so the core gates stay
+offline-capable. Real Phantom and Solflare checks are manual:
+[docs/testing/wallet-compat.md](docs/testing/wallet-compat.md).
 
 ### Auth API
 
@@ -169,14 +207,16 @@ directory ([ADR-0001](docs/adr/0001-single-app-module-boundaries.md)). `bun run 
 1. Outside a module, import only `@/modules/<name>`. Deep imports (`@/modules/<name>/internal/...`) are errors.
 2. Files under `src/modules/**` never import from `src/app/**`.
 3. Only `src/modules/database/**` may import `mongodb`.
-4. Only `src/modules/config/**` may read `process.env` (exceptions: tooling config files, `src/instrumentation.ts`, test setup).
+4. Only `src/modules/config/**` may read `process.env` (exceptions: tooling config files, `src/instrumentation.ts`, `src/proxy.ts`, test setup, helpers and E2E support).
+5. Client code (`src/modules/wallet-connect/**`, `src/ui/**`, `src/components/**`) may import only `@/modules/validation` and `@/modules/wallet-connect` among modules, and never `node:*`. Server modules never import `@/modules/wallet-connect`, `@/ui/*` or `@/components/*`. `src/ui/**` never imports `@/modules/wallet-connect` or `@/components/*`.
+6. Only `src/app/**` imports `next/headers` and the server functions of `next/navigation` (`redirect`, `notFound`, …).
+7. Only `src/modules/wallet/internal/base58.ts` and `src/modules/wallet-connect/internal/base58.ts` import `bs58` (tests and helpers are exempt).
 
-`auth` depends only on `wallet`, `security`, `database`, `config` and `shared`. Only
-`src/modules/wallet/internal/base58.ts` imports `bs58` (reviewed in code review, not linted).
+`auth` depends only on `wallet`, `security`, `database`, `config` and `shared`.
 
 The rules also cover dynamic `import()` and `require()`. The lint scopes are an allowlist of paths, so a
-new top-level directory (such as `scripts/` or `tests/e2e/`) or new extensions (such as `.mts` or `.js`)
-need their own scope in `eslint.config.mjs`.
+new top-level directory (such as `scripts/`) or new extensions (such as `.mts` or `.js`) need their own
+scope in `eslint.config.mjs`.
 
 All logging goes through the redacting logger in `@/modules/shared`; `console.*` is not allowed in `src/`.
 
