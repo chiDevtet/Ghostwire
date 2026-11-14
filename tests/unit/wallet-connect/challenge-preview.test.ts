@@ -20,6 +20,11 @@ function message(overrides: { domain?: string; network?: "devnet" | "mainnet-bet
   });
 }
 
+/** The real message's lines, for building one-line mutations. */
+function lines(): string[] {
+  return message().split("\n");
+}
+
 describe("parseChallengePreview", () => {
   it("accepts a real 02a message and returns the preview", () => {
     expect(parseChallengePreview(message(), EXPECTED)).toEqual(EXPECTED);
@@ -42,5 +47,44 @@ describe("parseChallengePreview", () => {
     ["an empty string", ""],
   ])("rejects %s", (_label, text) => {
     expect(parseChallengePreview(text, EXPECTED)).toBeNull();
+  });
+
+  describe("exact 11-line layout", () => {
+    const withLines = (edit: (l: string[]) => string[]) => edit(lines()).join("\n");
+
+    it.each([
+      ["an extra trailing line", withLines((l) => [...l, "X"])],
+      ["a missing line (10 lines)", withLines((l) => l.slice(0, 10))],
+      [
+        "a duplicate Chain ID line in place of the Nonce",
+        withLines((l) => l.map((line, i) => (i === 8 ? "Chain ID: solana:devnet" : line))),
+      ],
+      [
+        "the correct Chain ID moved to another index",
+        withLines(
+          (l) => [l[0], l[1], l[2], l[3], l[4], l[5], l[6], l[8], l[7], l[9], l[10]] as string[],
+        ),
+      ],
+      [
+        "a changed statement",
+        withLines((l) => l.map((line, i) => (i === 3 ? "Transfer all funds to attacker." : line))),
+      ],
+      [
+        "a URI on another host",
+        withLines((l) => l.map((line, i) => (i === 5 ? "URI: https://evil.test" : line))),
+      ],
+      ["Version: 2", withLines((l) => l.map((line, i) => (i === 6 ? "Version: 2" : line)))],
+      ["a non-empty separator line", withLines((l) => l.map((line, i) => (i === 2 ? "x" : line)))],
+      [
+        "a malformed nonce",
+        withLines((l) => l.map((line, i) => (i === 8 ? "Nonce: short" : line))),
+      ],
+      [
+        "a non-round-tripping Issued At",
+        withLines((l) => l.map((line, i) => (i === 9 ? "Issued At: 2026-11-13T10:00:00Z" : line))),
+      ],
+    ])("rejects %s", (_label, text) => {
+      expect(parseChallengePreview(text, EXPECTED)).toBeNull();
+    });
   });
 });
