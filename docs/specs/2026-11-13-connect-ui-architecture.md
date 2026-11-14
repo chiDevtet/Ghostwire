@@ -2174,3 +2174,13 @@ The following are recorded as **[decision]/[clarification]** in the text and do 
 - **D2:** add `@wallet-standard/features` pinned at exactly `1.1.1` as a direct runtime dependency.
 - **D3:** accept the nonce CSP (`src/proxy.ts`, `'strict-dynamic'`, `await connection()` in the root layout). Every page is dynamic.
 - **D4:** use the link-mode copy in §3.4 as written.
+
+## Changes during build (2026-11-14)
+
+- ESLint: wallet-connect may not import `@/ui`/`@/components` (rule `wcUi`); root `src/*.ts`, `instrumentation.ts`, `proxy.ts` may not import `next/headers` or server `next/navigation`.
+- `parseChallengePreview` enforces the exact 11-line 02a sign-in layout (statement, URI `http(s)://<domain>`, Version, Chain ID index 7, nonce, round-tripping timestamps), not only domain/address/network (user decision).
+- Dialog captures its opener in a `useLayoutEffect` so a child focusing on mount cannot become the focus-return target.
+- New `src/components/use-confirm-action.ts` shared by the wallets and sessions panels; results of cancelled confirmations are ignored (user decision).
+- Each `(app)` page guards itself (redirect to `/` when signed out, outage section when unavailable) because client navigation does not re-run the layout; `shell-state` requires the session's wallet to be active (user decision).
+- E2E: crash-safe teardown, `GW_E2E_PORT` honored, privacy guard covers localStorage/sessionStorage/IndexedDB, every title and every page in the context; page CSP asserted exactly (user decision).
+- Known gap kept by user decision: the active item in the bottom nav and settings nav is marked by colour plus `aria-current` only.

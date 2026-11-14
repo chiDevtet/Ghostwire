@@ -388,3 +388,13 @@ Packages that are not added: `@solana/web3.js`, `@solana/kit`, `@solana/wallet-a
 - **CSP vs Next inline scripts.** If `script-src 'self'` breaks hydration, we switch to nonce middleware. The plan includes a spike step that decides this.
 - **Mobile in-app browsers.** Wallet Standard injection timing differs there. Late registration is handled through the `register` event, and the manual checklist covers it.
 - **Playwright browser download.** The Chromium download needs network access. E2E is a separate script so the core gates stay offline-capable.
+
+## Changes during build (2026-11-14)
+
+- ESLint: wallet-connect may not import `@/ui`/`@/components` (rule `wcUi`); root `src/*.ts`, `instrumentation.ts`, `proxy.ts` may not import `next/headers` or server `next/navigation`.
+- `parseChallengePreview` enforces the exact 11-line 02a sign-in layout (statement, URI `http(s)://<domain>`, Version, Chain ID index 7, nonce, round-tripping timestamps), not only domain/address/network (user decision).
+- Dialog captures its opener in a `useLayoutEffect` so a child focusing on mount cannot become the focus-return target.
+- New `src/components/use-confirm-action.ts` shared by the wallets and sessions panels; results of cancelled confirmations are ignored (user decision).
+- Each `(app)` page guards itself (redirect to `/` when signed out, outage section when unavailable) because client navigation does not re-run the layout; `shell-state` requires the session's wallet to be active (user decision).
+- E2E: crash-safe teardown, `GW_E2E_PORT` honored, privacy guard covers localStorage/sessionStorage/IndexedDB, every title and every page in the context; page CSP asserted exactly (user decision).
+- Known gap kept by user decision: the active item in the bottom nav and settings nav is marked by colour plus `aria-current` only.
