@@ -31,8 +31,8 @@ export const loadShellState = cache(async (): Promise<ShellState> => {
     const me = await getMe(pageSession);
     const walletId = pageSession.session.walletId.toHexString();
     const currentWallet = me.wallets.find((wallet) => wallet.id === walletId);
-    // A session whose wallet is missing from the user's list: treat as signed out.
-    if (currentWallet === undefined) return SIGNED_OUT;
+    // Wallet missing from the list or not active: treat as signed out (defense in depth).
+    if (currentWallet === undefined || currentWallet.status !== "active") return SIGNED_OUT;
     return { kind: "signed-in", viewer: { me, currentWallet, pageSession } };
   } catch (error) {
     if (error instanceof UnauthenticatedError) return SIGNED_OUT;

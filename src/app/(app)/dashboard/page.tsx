@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
+import { ServiceUnavailable } from "@/components/service-unavailable";
 import { Address } from "@/ui/address";
 import { Card } from "@/ui/card";
 import { NetworkIndicator } from "@/ui/network-indicator";
@@ -9,7 +11,8 @@ export const metadata: Metadata = { title: "Dashboard · GHOST WIRE" };
 /** No balances and no zero values: nothing is fabricated before private balances exist. */
 export default async function DashboardPage() {
   const state = await loadShellState();
-  if (state.kind !== "signed-in") return null; // the (app) layout redirects or shows the outage
+  if (state.kind === "signed-out") redirect("/");
+  if (state.kind === "unavailable") return <ServiceUnavailable variant="section" />;
   const { me, currentWallet } = state.viewer;
   const activeWallets = me.wallets.filter((wallet) => wallet.status === "active").length;
   return (

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { SessionsPanel } from "@/components/sessions-panel";
 import { ServiceUnavailable } from "@/components/service-unavailable";
 import { listSessions, type SessionView } from "@/modules/auth";
@@ -9,7 +10,8 @@ export const metadata: Metadata = { title: "Sessions · GHOST WIRE" };
 
 export default async function SessionsPage() {
   const state = await loadShellState();
-  if (state.kind !== "signed-in") return null;
+  if (state.kind === "signed-out") redirect("/");
+  if (state.kind === "unavailable") return <ServiceUnavailable variant="section" />;
   let sessions: SessionView[];
   try {
     sessions = await listSessions(state.viewer.pageSession);
