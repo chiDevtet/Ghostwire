@@ -11,6 +11,10 @@ export type {
   FlowStatus,
   SignPreview,
 } from "./internal/flow";
+export { runFlow } from "./internal/run-flow";
+export type { FlowApi, RunFlowOptions } from "./internal/run-flow";
+export { useConnectFlow } from "./internal/use-connect-flow";
+export type { ConnectFlow, StartOptions } from "./internal/use-connect-flow";
 export { classifyWalletError } from "./internal/errors";
 export type { WalletErrorKind } from "./internal/errors";
 export { parseChallengePreview } from "./internal/challenge-preview";
