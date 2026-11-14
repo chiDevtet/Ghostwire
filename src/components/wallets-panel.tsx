@@ -1,7 +1,6 @@
 "use client";
 
 import { Plus } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { SolanaNetwork } from "@/modules/validation";
 import { unlinkWallet, type WalletItem } from "@/modules/wallet-connect";
@@ -11,10 +10,8 @@ import { Button } from "@/ui/button";
 import { ConfirmDialog } from "@/ui/confirm-dialog";
 import { DateTime } from "@/ui/date-time";
 import { NetworkIndicator } from "@/ui/network-indicator";
-import { useToast } from "@/ui/toast";
 import { ConnectWalletModal } from "./connect-wallet-modal";
-import { panelErrorCopy } from "./panel-copy";
-import { useFreshNavigation } from "./use-fresh-navigation";
+import { useConfirmAction } from "./use-confirm-action";
 
 export interface WalletsPanelProps {
   readonly wallets: readonly WalletItem[];
@@ -29,52 +26,18 @@ export const UNLINK_BODY =
 
 /** /settings/wallets: list, link (modal in link mode) and unlink with confirmation. */
 export function WalletsPanel({ wallets, currentWalletId, network }: WalletsPanelProps) {
-  const router = useRouter();
-  const navigate = useFreshNavigation();
-  const toast = useToast();
   const [linking, setLinking] = useState(false);
-  const [target, setTarget] = useState<WalletItem | null>(null);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const closeConfirm = (): void => {
-    setTarget(null);
-    setPending(false);
-    setError(null);
-  };
-
-  const confirmUnlink = async (): Promise<void> => {
-    if (target === null) return;
-    setPending(true);
-    setError(null);
-    const result = await unlinkWallet(target.id);
-    if (result.ok) {
-      closeConfirm();
-      if (target.id === currentWalletId) {
-        // The server revoked this session and cleared the cookie.
-        toast.show({
-          message: "You unlinked the wallet you signed in with, so you've been signed out.",
-        });
-        navigate("/");
-      } else {
-        toast.show({ message: "Wallet unlinked.", tone: "success" });
-        router.refresh();
-      }
-      return;
-    }
-    if (result.code === "NOT_FOUND") {
-      closeConfirm();
-      router.refresh();
-      return;
-    }
-    if (result.code === "UNAUTHENTICATED") {
-      // SessionExpiredHandler shows the toast and navigates.
-      closeConfirm();
-      return;
-    }
-    setPending(false);
-    setError(panelErrorCopy(result));
-  };
+  const { target, pending, error, open, close, confirm } = useConfirmAction<WalletItem>({
+    run: unlinkWallet,
+    onSuccess: (wallet) =>
+      // For the current wallet the server revoked this session and cleared the cookie.
+      wallet.id === currentWalletId
+        ? {
+            message: "You unlinked the wallet you signed in with, so you've been signed out.",
+            signedOut: true,
+          }
+        : { message: "Wallet unlinked.", tone: "success" },
+  });
 
   return (
     <section aria-labelledby="wallets-heading" className="flex flex-col gap-4">
@@ -119,7 +82,7 @@ export function WalletsPanel({ wallets, currentWalletId, network }: WalletsPanel
             </dl>
             {wallet.status === "active" && (
               <div>
-                <Button variant="secondary" onClick={() => setTarget(wallet)}>
+                <Button variant="secondary" onClick={() => open(wallet)}>
                   Unlink
                   <span className="sr-only"> wallet {truncateAddress(wallet.address)}</span>
                 </Button>
@@ -143,8 +106,8 @@ export function WalletsPanel({ wallets, currentWalletId, network }: WalletsPanel
         confirmLabel="Unlink"
         pending={pending}
         error={error}
-        onConfirm={() => void confirmUnlink()}
-        onCancel={closeConfirm}
+        onConfirm={() => void confirm()}
+        onCancel={close}
       />
     </section>
   );

@@ -105,4 +105,12 @@ describe("SessionsPanel", () => {
       "Something went wrong. Try again.",
     );
   });
+
+  it("closes and refreshes on NOT_FOUND", async () => {
+    const user = setup(() => json(404, { code: "NOT_FOUND", message: "x" }));
+    await user.click(within(rows()[1] as HTMLElement).getByRole("button", { name: /^Revoke/ }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Revoke" }));
+    await waitFor(() => expect(routerMock.refresh).toHaveBeenCalled());
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
 });

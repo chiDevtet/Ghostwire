@@ -166,4 +166,37 @@ describe("WalletsPanel", () => {
       "We can't reach GHOST WIRE right now. Check your connection and try again.",
     );
   });
+
+  it("ignores a failure that arrives after Cancel, so the next confirmation is clean", async () => {
+    let fail: () => void = () => undefined;
+    const hang = new Promise<void>((resolve) => {
+      fail = resolve;
+    });
+    const user = setup(async () => {
+      await hang;
+      return json(503, { code: "DEPENDENCY_UNAVAILABLE", message: "x" });
+    });
+    const first = await openUnlink(user, OTHER);
+    await user.click(within(first).getByRole("button", { name: "Unlink" }));
+    await user.click(within(first).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fail();
+    await waitFor(() => expect(api?.requests).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const second = await openUnlink(user, CURRENT);
+    expect(within(second).queryByRole("alert")).toBeNull();
+    expect(second.textContent).not.toContain("can't reach");
+    expect(within(second).getByRole("button", { name: "Unlink" })).toHaveProperty(
+      "disabled",
+      false,
+    );
+  });
+
+  it("closes without navigating on UNAUTHENTICATED", async () => {
+    const user = setup(() => json(401, { code: "UNAUTHENTICATED", message: "x" }));
+    const dialog = await openUnlink(user, OTHER);
+    await user.click(within(dialog).getByRole("button", { name: "Unlink" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(routerMock.refresh).not.toHaveBeenCalled();
+  });
 });

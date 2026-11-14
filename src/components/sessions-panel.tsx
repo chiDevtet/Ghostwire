@@ -1,16 +1,12 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useState } from "react";
 import { revokeSession, type SessionItem } from "@/modules/wallet-connect";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { ConfirmDialog } from "@/ui/confirm-dialog";
 import { DateTime, formatUtc } from "@/ui/date-time";
 import { NetworkIndicator } from "@/ui/network-indicator";
-import { useToast } from "@/ui/toast";
-import { panelErrorCopy } from "./panel-copy";
-import { useFreshNavigation } from "./use-fresh-navigation";
+import { useConfirmAction } from "./use-confirm-action";
 
 const OTHER_COPY = {
   title: "Revoke this session?",
@@ -25,49 +21,17 @@ const CURRENT_COPY = {
 
 /** /settings/sessions: active sessions, "This device" marker, revoke with confirmation. */
 export function SessionsPanel({ sessions }: { readonly sessions: readonly SessionItem[] }) {
-  const router = useRouter();
-  const navigate = useFreshNavigation();
-  const toast = useToast();
-  const [target, setTarget] = useState<SessionItem | null>(null);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { target, lastTarget, pending, error, open, close, confirm } =
+    useConfirmAction<SessionItem>({
+      run: revokeSession,
+      onSuccess: (session) =>
+        session.current
+          ? { message: "This device was signed out.", signedOut: true }
+          : { message: "Session revoked.", tone: "success" },
+    });
 
-  const closeConfirm = (): void => {
-    setTarget(null);
-    setPending(false);
-    setError(null);
-  };
-
-  const confirmRevoke = async (): Promise<void> => {
-    if (target === null) return;
-    setPending(true);
-    setError(null);
-    const result = await revokeSession(target.id);
-    if (result.ok) {
-      closeConfirm();
-      if (target.current) {
-        toast.show({ message: "This device was signed out." });
-        navigate("/");
-      } else {
-        toast.show({ message: "Session revoked.", tone: "success" });
-        router.refresh();
-      }
-      return;
-    }
-    if (result.code === "NOT_FOUND") {
-      closeConfirm();
-      router.refresh();
-      return;
-    }
-    if (result.code === "UNAUTHENTICATED") {
-      closeConfirm();
-      return;
-    }
-    setPending(false);
-    setError(panelErrorCopy(result));
-  };
-
-  const copy = target?.current === true ? CURRENT_COPY : OTHER_COPY;
+  // Keep the last target's copy while the dialog closes so the title doesn't flip.
+  const copy = lastTarget?.current === true ? CURRENT_COPY : OTHER_COPY;
 
   return (
     <section aria-labelledby="sessions-heading" className="flex flex-col gap-4">
@@ -104,7 +68,7 @@ export function SessionsPanel({ sessions }: { readonly sessions: readonly Sessio
               </dd>
             </dl>
             <div>
-              <Button variant="secondary" onClick={() => setTarget(session)}>
+              <Button variant="secondary" onClick={() => open(session)}>
                 {session.current ? (
                   "Sign out this device"
                 ) : (
@@ -128,8 +92,8 @@ export function SessionsPanel({ sessions }: { readonly sessions: readonly Sessio
         confirmLabel={copy.confirmLabel}
         pending={pending}
         error={error}
-        onConfirm={() => void confirmRevoke()}
-        onCancel={closeConfirm}
+        onConfirm={() => void confirm()}
+        onCancel={close}
       />
     </section>
   );
