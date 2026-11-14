@@ -263,6 +263,24 @@ describe("status copy for every state", () => {
     expect(paths().filter((p) => p === "POST /api/v1/auth/challenge")).toHaveLength(2);
   });
 
+  it("Try again uses the network selected after the failure", async () => {
+    const fake = wallet({ mode: "reject" });
+    server();
+    const user = setup();
+    await user.click(screen.getByRole("button", { name: "Fake Wallet" }));
+    await screen.findByText("You cancelled the sign-in.");
+    fake.setMode("approve");
+    await user.click(radio("Mainnet-beta"));
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(routerMock.replace).toHaveBeenCalledWith("/dashboard"));
+    const bodies = await Promise.all(
+      (api?.requests ?? [])
+        .filter((r) => new URL(r.url).pathname === "/api/v1/auth/challenge")
+        .map((r) => r.json() as Promise<{ network: string }>),
+    );
+    expect(bodies.map((b) => b.network)).toEqual(["devnet", "mainnet-beta"]);
+  });
+
   it("disconnected → Reconnect", async () => {
     const fake = wallet({ mode: "disconnect" });
     server();
@@ -399,6 +417,27 @@ describe("closing and accounts", () => {
     await user.click(screen.getByRole("button", { name: "Open modal" }));
     expect(screen.getByRole("button", { name: "Fake Wallet" })).toBeTruthy();
     expect(screen.queryByText("Approve the sign-in request in your wallet.")).toBeNull();
+  });
+
+  it("closing while verifying refreshes the router once", async () => {
+    wallet();
+    server({ "POST /api/v1/auth/verify": never });
+    const user = setup();
+    await user.click(screen.getByRole("button", { name: "Fake Wallet" }));
+    await screen.findByText("Verifying…");
+    expect(routerMock.refresh).not.toHaveBeenCalled();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(routerMock.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("closing while idle does not refresh", async () => {
+    wallet();
+    server();
+    const user = setup();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(routerMock.refresh).not.toHaveBeenCalled();
   });
 
   it("asks which account to use when the wallet has several, and signs with that key", async () => {

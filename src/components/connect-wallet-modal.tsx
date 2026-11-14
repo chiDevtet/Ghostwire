@@ -76,7 +76,10 @@ export function ConnectWalletModal({
   }, [state, mode, navigate, router]);
 
   const close = (): void => {
+    const wasVerifying = state.status === "verifying";
     flow.cancel();
+    // The server may already have created a session (or revoked the old one) for a verify we abandoned.
+    if (wasVerifying) router.refresh();
     onClose();
   };
 
