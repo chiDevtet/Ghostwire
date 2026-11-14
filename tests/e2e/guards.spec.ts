@@ -14,11 +14,9 @@ test("pages carry the nonce CSP and the security headers", async ({ page }) => {
   const response = await page.goto("/");
   const headers = response?.headers() ?? {};
   const csp = headers["content-security-policy"] ?? "";
-  expect(csp).toContain("'nonce-");
-  expect(csp).toContain("'strict-dynamic'");
-  expect(csp).toContain("frame-ancestors 'none'");
-  expect(csp).toContain("connect-src 'self'");
-  expect(csp).not.toContain("unsafe-eval");
+  expect(csp).toMatch(
+    /^default-src 'self'; script-src 'self' 'nonce-[A-Za-z0-9+/=_-]{16,}' 'strict-dynamic'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'$/,
+  );
   expect(headers["referrer-policy"]).toBe("no-referrer");
   expect(headers["x-content-type-options"]).toBe("nosniff");
   expect(headers["permissions-policy"]).toBe("camera=(), microphone=(), geolocation=()");

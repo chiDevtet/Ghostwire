@@ -54,33 +54,92 @@ export const test = base.extend<Fixtures>({
     });
   },
   guards: [
-    async ({ page, addresses }, provide) => {
+    async ({ context, addresses }, provide) => {
       const requestUrls: string[] = [];
       const navigations: string[] = [];
+      const titles: string[] = [];
       const problems: string[] = [];
-      page.on("request", (request) => requestUrls.push(request.url()));
-      page.on("framenavigated", (frame) => navigations.push(frame.url()));
-      page.on("console", (message) => {
-        if (/Content Security Policy/i.test(message.text()))
-          problems.push(`CSP console: ${message.text()}`);
-      });
-      page.on("response", (response) => {
+      const pending: Promise<unknown>[] = [];
+      const pages = new Set<Page>();
+
+      // Attached to every page of the context (popups included), not only the `page` fixture.
+      const watch = (watched: Page): void => {
+        pages.add(watched);
+        watched.on("framenavigated", (frame) => {
+          navigations.push(frame.url());
+          if (frame === watched.mainFrame()) {
+            // Best effort per navigation (the page may close first); the final reads below throw.
+            pending.push(
+              watched.title().then(
+                (title) => titles.push(title),
+                () => undefined,
+              ),
+            );
+          }
+        });
+        watched.on("domcontentloaded", () => {
+          pending.push(
+            watched.title().then(
+              (title) => titles.push(title),
+              () => undefined,
+            ),
+          );
+        });
+        watched.on("console", (message) => {
+          if (/Content Security Policy/i.test(message.text()))
+            problems.push(`CSP console: ${message.text()}`);
+        });
+      };
+      // Context-level request/response events also see a popup's very first request, which a
+      // page-level listener attached from "page" would miss.
+      context.on("request", (request) => requestUrls.push(request.url()));
+      context.on("response", (response) => {
         if (response.request().resourceType() !== "document") return;
         if (response.status() >= 300 && response.status() < 400) return;
         const csp = response.headers()["content-security-policy"] ?? "";
         if (!csp.includes("'nonce-")) problems.push(`no nonce CSP on ${response.url()}`);
       });
+      // Every title the document ever has, including ones replaced before the next navigation.
+      await context.exposeFunction("__gwReportTitle", (title: string) => {
+        titles.push(title);
+      });
+      await context.addInitScript(() => {
+        if (window.top !== window) return;
+        const report = (): void => {
+          const hook = (window as unknown as { __gwReportTitle?: (t: string) => void })
+            .__gwReportTitle;
+          if (typeof hook === "function") hook(document.title);
+        };
+        new MutationObserver(report).observe(document, {
+          subtree: true,
+          childList: true,
+          characterData: true,
+        });
+      });
+      for (const existing of context.pages()) watch(existing);
+      context.on("page", watch);
 
       await provide();
 
+      await Promise.all(pending);
       for (const url of requestUrls) {
         if (url.startsWith("data:") || url.startsWith("blob:")) continue;
         if (new URL(url).origin !== E2E_ORIGIN) problems.push(`third-party request: ${url}`);
       }
-      const texts = [...requestUrls, ...navigations];
-      if (!page.isClosed()) {
-        texts.push(await page.title());
-        texts.push(await page.evaluate(() => JSON.stringify({ ...localStorage })).catch(() => ""));
+      const texts = [...requestUrls, ...navigations, ...titles];
+      for (const watched of pages) {
+        if (watched.isClosed() || new URL(watched.url()).origin !== E2E_ORIGIN) continue;
+        // No catch: a storage read that throws must fail the test, not pass silently.
+        texts.push(await watched.title());
+        texts.push(
+          await watched.evaluate(async () =>
+            JSON.stringify({
+              local: { ...localStorage },
+              session: { ...sessionStorage },
+              indexedDB: (await indexedDB.databases()).map((database) => database.name),
+            }),
+          ),
+        );
       }
       for (const address of addresses) {
         if (texts.some((text) => text.includes(address)))

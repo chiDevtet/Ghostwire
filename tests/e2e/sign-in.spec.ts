@@ -1,3 +1,4 @@
+import { E2E_ORIGIN } from "./support/origin";
 import { expect, setWalletMode, signInWith, test, walletSignCount } from "./support/fixtures";
 
 const WALLET = "GW Test Wallet A";
@@ -21,7 +22,7 @@ test("flow 1: connect on devnet, see the signing preview, sign in with an HttpOn
   await dialog.getByRole("button", { name: WALLET }).click();
   await expect(dialog.getByText("Approve the sign-in request in your wallet.")).toBeVisible();
   const preview = dialog.locator("dl");
-  await expect(preview).toContainText("127.0.0.1:3210");
+  await expect(preview).toContainText(new URL(E2E_ORIGIN).host);
   await expect(preview).toContainText(truncated);
   await expect(preview).toContainText("Devnet");
   await page.keyboard.press("Escape");

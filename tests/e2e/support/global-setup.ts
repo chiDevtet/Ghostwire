@@ -8,6 +8,7 @@ import { E2E_ORIGIN, E2E_PORT } from "./origin";
 const require = createRequire(import.meta.url);
 const READY_TIMEOUT_MS = 60_000;
 const STOP_TIMEOUT_MS = 10_000;
+const GROUP_TIMEOUT_MS = 3_000;
 
 async function probe(url: string, timeoutMs: number): Promise<Response | null> {
   try {
@@ -19,15 +20,35 @@ async function probe(url: string, timeoutMs: number): Promise<Response | null> {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+function signalGroup(pid: number, signal: NodeJS.Signals | 0): boolean {
+  try {
+    process.kill(-pid, signal);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+    throw error;
+  }
+}
+
+/** Signals only the process group this setup spawned (the server is its leader). */
 async function stopServer(server: ChildProcess): Promise<void> {
-  if (server.pid === undefined || server.exitCode !== null) return;
-  const exited = new Promise<void>((resolve) => server.once("exit", () => resolve()));
-  process.kill(-server.pid, "SIGTERM");
-  const timedOut = await Promise.race([
-    exited.then(() => false),
-    sleep(STOP_TIMEOUT_MS).then(() => true),
-  ]);
-  if (timedOut) process.kill(-server.pid, "SIGKILL");
+  const pid = server.pid;
+  if (pid === undefined) return;
+  if (server.exitCode === null && server.signalCode === null) {
+    const exited = new Promise<void>((resolve) => server.once("exit", () => resolve()));
+    signalGroup(pid, "SIGTERM");
+    await Promise.race([exited, sleep(STOP_TIMEOUT_MS)]);
+  }
+  // The leader is gone (or timed out): make sure no member of the group outlives it.
+  const deadline = Date.now() + GROUP_TIMEOUT_MS;
+  while (signalGroup(pid, 0)) {
+    if (Date.now() > deadline) {
+      signalGroup(pid, "SIGKILL");
+      await sleep(200);
+      return;
+    }
+    await sleep(100);
+  }
 }
 
 /**
@@ -81,17 +102,29 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     },
   });
   closeSync(logFd);
+  let spawnFailed = false;
+  server.on("error", () => {
+    spawnFailed = true;
+  });
 
   const teardown = async (): Promise<void> => {
-    await stopServer(server);
-    await replSet.stop({ doCleanup: true });
+    try {
+      await stopServer(server);
+    } finally {
+      await replSet.stop({ doCleanup: true });
+    }
   };
 
   const deadline = Date.now() + READY_TIMEOUT_MS;
   for (;;) {
     const ready = await probe(`${E2E_ORIGIN}/api/ready`, 2_000);
     if (ready?.status === 200) break;
-    if (Date.now() > deadline || server.exitCode !== null) {
+    if (
+      Date.now() > deadline ||
+      spawnFailed ||
+      server.exitCode !== null ||
+      server.signalCode !== null
+    ) {
       await teardown();
       throw new Error(`next start did not become ready; see ${logPath}`);
     }
