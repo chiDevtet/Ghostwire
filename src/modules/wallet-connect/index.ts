@@ -1,3 +1,6 @@
+export { listSolanaWallets, refreshWallets, subscribeWallets } from "./internal/registry";
+export type { WalletEntry } from "./internal/registry";
+export { useWallets } from "./internal/use-wallets";
 export { initialFlowState, isInFlight, reduce, toFailureCode } from "./internal/flow";
 export type {
   AccountOption,
